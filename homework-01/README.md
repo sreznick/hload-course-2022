@@ -46,3 +46,20 @@
 * 10000 запросов на создание
 * 100000 успешных GET-запросов (завершающихся редиректом)
 * 100000 неудачных GET-запросов (завершающихся 404)
+
+
+### Материалы
+
+[Общее описание Gin Framework](https://gin-gonic.com/docs/)
+
+[API Gin Framework](https://pkg.go.dev/github.com/gin-gonic/gin)
+
+[Базы данных из Go](http://go-database-sql.org/)
+
+[SQL API](https://pkg.go.dev/database/sql)
+
+[Prometheus](https://prometheus.io/docs/introduction/overview/)
+
+[Инструментирование Go-приложений для Prometheus](https://prometheus.io/docs/guides/go-application/)
+
+[Пример простейшего http-клиента](https://gobyexample.com/http-clients)
