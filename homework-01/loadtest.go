@@ -3,7 +3,6 @@ package main
 import (
     "fmt"
     "bytes"
-    // "time"
     "math/rand"
     "sync"
     "net/http"
@@ -13,7 +12,7 @@ import (
 )
 
 
-type callable func()
+type callable func() *http.Response
 
 // Max simultaneous PG connections, also max runnable at the same time goroutines.
 const MAX_PG_CONNECTIONS_COUNT = 5
@@ -30,10 +29,15 @@ const HTTP_GET_FAILURE_COUNT = 100_000
 var data = make([]string, 0, HTTP_PUT_REQUESTS_COUNT)
 var dataMutex = &sync.Mutex{}
 
+var responseStatuses = make(map[int]int)
+var responseStatusesMutex = &sync.Mutex{}
+
 func main() {
   runRequests("PUT", HTTP_PUT_REQUESTS_COUNT, performTinyURLCreationRequest)
   runRequests("GET SUCCESS", HTTP_GET_SUCCESS_COUNT, performSuccessfulFetchRequests)
   runRequests("GET FAILURE", HTTP_GET_FAILURE_COUNT, performFailureFetchRequests)
+
+  fmt.Println(responseStatuses)
 }
 
 func runRequests(task string, iterations int, f callable) {
@@ -45,7 +49,11 @@ func runRequests(task string, iterations int, f callable) {
     semaphore <- 1
     go func() {
       defer waitGroup.Done()
-      f()
+      if response := f(); response != nil {
+        responseStatusesMutex.Lock()
+        responseStatuses[response.StatusCode] += 1
+        responseStatusesMutex.Unlock()
+      }
       <- semaphore
     }()
   }
@@ -59,7 +67,7 @@ type Result struct {
     Tinyurl string `json:"tinyurl"`
 }
 
-func performTinyURLCreationRequest() {
+func performTinyURLCreationRequest() *http.Response {
   var requestBody = []byte(fmt.Sprintf(`{"longurl": "%s"}`, gofakeit.LetterN(100)))
   request, err := http.NewRequest(http.MethodPut, TINYURL_CREATION_URI, bytes.NewBuffer(requestBody))
   if err != nil {
@@ -80,9 +88,11 @@ func performTinyURLCreationRequest() {
   }
 
   defer response.Body.Close()
+
+  return response
 }
 
-func performSuccessfulFetchRequests() {
+func performSuccessfulFetchRequests() *http.Response {
   getClient := &http.Client{
       CheckRedirect: func(req *http.Request, via []*http.Request) error {
           return http.ErrUseLastResponse
@@ -98,7 +108,7 @@ func performSuccessfulFetchRequests() {
 
   if request, err = http.NewRequest("GET", LONGURL_FETCH_URI_PREFIX + tinyurl, nil); err != nil {
     log.Print(err, request)
-    return
+    return nil
   }
 
   if response, err = getClient.Do(request); err != nil {
@@ -106,9 +116,11 @@ func performSuccessfulFetchRequests() {
   }
 
   defer response.Body.Close()
+
+  return response
 }
 
-func performFailureFetchRequests() {
+func performFailureFetchRequests() *http.Response {
   var request *http.Request
   var err error
 
@@ -120,7 +132,7 @@ func performFailureFetchRequests() {
 
   if request, err = http.NewRequest("GET", LONGURL_FETCH_URI_PREFIX + gofakeit.LetterN(100), nil); err != nil {
     log.Print(err, request)
-    return
+    return nil
   }
 
   var response *http.Response
@@ -130,4 +142,6 @@ func performFailureFetchRequests() {
   }
 
   defer response.Body.Close()
+
+  return response
 }
