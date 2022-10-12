@@ -19,6 +19,7 @@ import (
 const SQL_DRIVER = "postgres"
 const SQL_CONNECT_URL = "postgres://postgres:postgres@localhost"
 
+
 func MetricsReporterMiddleware(c *gin.Context) {
   start := time.Now().UnixMicro()
   c.Next()

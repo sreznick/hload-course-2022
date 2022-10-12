@@ -2,15 +2,8 @@ global:
   scrape_interval:     2s
   evaluation_interval: 1m
 
-  external_labels:
-      monitor: 'codelab-monitor'
-
-rule_files:
 
 scrape_configs:
   - job_name: 'prometheus'
-
     static_configs:
-      - targets: ['0.0.0.0:2112']
-
-  - job_name: 'docker'
+      - targets: ["0.0.0.0:2112"]
