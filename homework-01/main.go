@@ -1,51 +1,47 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "net/http"
+	"database/sql"
+	"fmt"
 
-    "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
+
+	"main/server"
 )
 
 const SQL_DRIVER = "postgres"
 const SQL_CONNECT_URL = "postgres://postgres:postgres@localhost"
 
-func setupRouter() *gin.Engine {
-	r := gin.Default()
+const (
+	host     = "localhost"
+	port     = 5432
+	user     = "postgres"
+	password = "persikk"
+	dbname   = "hload1"
+)
 
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "pong")
-	})
-
-	r.GET("/user/:name", func(c *gin.Context) {
-		user := c.Params.ByName("name")
-		if user == "vasya" {
-			c.JSON(http.StatusOK, gin.H{"user": user, "value": "12345"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{"user": user, "status": "no value"})
-		}
-	})
-
-	return r
+func checkError(err error, msg string) {
+	if err != nil {
+		fmt.Println(msg, err)
+		panic("exit")
+	}
 }
 
 func main() {
-    fmt.Println(sql.Drivers())
-    conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
-    if err != nil {
-        fmt.Println("Failed to open", err)
-        panic("exit")
-    }
+	fmt.Println(sql.Drivers())
+	sqlParams := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
 
-    err = conn.Ping()
-    if err != nil {
-        fmt.Println("Failed to ping database", err)
-        panic("exit")
-    }
+	conn, err := sql.Open(SQL_DRIVER, sqlParams)
+	checkError(err, "Failed to open")
 
+	err = conn.Ping()
+	checkError(err, "Failed to ping database")
 
-	r := setupRouter()
+	_, err = conn.Exec("create table if not exists urlsStorage(id serial primary key, long_url varchar(200));")
+	checkError(err, "Failed to create urls table")
+
+	r := server.SetupRouter(conn)
 	r.Run(":8080")
 }
