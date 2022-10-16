@@ -10,10 +10,10 @@ const (
 	messageLength     = 7
 )
 
-func TinyUrlIdToTinyUrl(id int) (string, error) {
+func TinyUrlIdToTinyUrl(id int64) (string, error) {
 	bytes := make([]byte, messageLength)
 
-	for i, _ := range bytes {
+	for i := range bytes {
 		var err error
 		bytes[i], err = intToByte(id % alphabetSize)
 		if err != nil {
@@ -26,9 +26,9 @@ func TinyUrlIdToTinyUrl(id int) (string, error) {
 	return string(bytes), nil
 }
 
-func TinyUrlToTinyUrlId(url string) (int, error) {
+func TinyUrlToTinyUrlId(url string) (int64, error) {
 	bytes := []byte(url)
-	id := 0
+	id := int64(0)
 
 	for i := len(bytes) - 1; i >= 0; i-- {
 		id *= alphabetSize
@@ -43,7 +43,7 @@ func TinyUrlToTinyUrlId(url string) (int, error) {
 	return id, nil
 }
 
-func intToByte(number int) (byte, error) {
+func intToByte(number int64) (byte, error) {
 	if number > alphabetSize {
 		return '0', fmt.Errorf("incorrect argument %d should be less or equal %d", number, alphabetSize)
 	}
@@ -57,17 +57,17 @@ func intToByte(number int) (byte, error) {
 	}
 }
 
-func byteToInt(b byte) (int, error) {
+func byteToInt(b byte) (int64, error) {
 	if b >= 'a' && b <= 'z' {
-		return int(b - 'a'), nil
+		return int64(b - 'a'), nil
 	}
 
 	if b >= 'A' && b <= 'Z' {
-		return int(b - 'A' + 26), nil
+		return int64(b - 'A' + 26), nil
 	}
 
 	if b >= '0' && b <= '9' {
-		return int(b - '0' + 52), nil
+		return int64(b - '0' + 52), nil
 	}
 
 	return 0, fmt.Errorf("incorrect character in url %c", b)

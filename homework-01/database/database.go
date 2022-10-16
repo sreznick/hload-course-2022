@@ -38,8 +38,8 @@ func (db *UrlTable) InsertNewUrl(url string) error {
 	return err
 }
 
-func (db *UrlTable) GetTinyUrlIdByLongUrl(url string) (int, error) {
-	var tinyUrlId int
+func (db *UrlTable) GetTinyUrlIdByLongUrl(url string) (int64, error) {
+	var tinyUrlId int64
 	err := db.Connection.QueryRow(selectByUrl, url).Scan(&tinyUrlId)
 	return tinyUrlId, err
 }

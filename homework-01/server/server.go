@@ -51,7 +51,8 @@ func doRedirectOnLongString(c *gin.Context, db *database.UrlTable, tinyUrl strin
 }
 
 func SetupRouter(db *database.UrlTable) *gin.Engine {
-	r := gin.Default()
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
 
 	r.PUT("/create", func(c *gin.Context) {
 		start := time.Now()
