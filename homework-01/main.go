@@ -25,7 +25,7 @@ const (
 func checkError(err error, msg string) {
 	if err != nil {
 		fmt.Println(msg, err)
-		panic("exit")
+		panic("Exit")
 	}
 }
 
