@@ -6,6 +6,7 @@ import (
 	"main/database"
 	"main/model"
 	"net/http"
+	"time"
 )
 
 type PutRequestJson struct {
@@ -53,12 +54,16 @@ func SetupRouter(db *database.UrlTable) *gin.Engine {
 	r := gin.Default()
 
 	r.PUT("/create", func(c *gin.Context) {
+		start := time.Now()
 		create(c, db)
+		madeCreateOperationWithTimeInMCS(float64(time.Since(start).Nanoseconds()) / 1000)
 	})
 
 	r.GET("/:url", func(c *gin.Context) {
+		start := time.Now()
 		tinyUrl := c.Params.ByName("url")
 		doRedirectOnLongString(c, db, tinyUrl)
+		madeGetOperationWithTimeInMCS(float64(time.Since(start).Nanoseconds()) / 1000)
 	})
 	return r
 }
