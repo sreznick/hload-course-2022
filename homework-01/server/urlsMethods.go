@@ -35,6 +35,7 @@ func GenerateTinyUrl(id int) string {
 
 func GetIdByTinyUrl(tinyUrl string) (int, error) {
 	length := len(tinyUrl)
+
 	if length > TINY_URL_LENGTH {
 		return -1, fmt.Errorf("invalid tiny url")
 	}

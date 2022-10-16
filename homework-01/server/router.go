@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -22,6 +23,9 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 	r := gin.Default()
 
 	r.PUT("/create", func(c *gin.Context) {
+		putRequestsNumber.Inc()
+		start := time.Now()
+
 		var request CreateRequest
 		err := c.BindJSON(&request)
 		if err != nil {
@@ -45,9 +49,15 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 
 		}
 
+		elapsed := float64(time.Since(start).Milliseconds())
+		putRequestTime.Observe(elapsed)
+
 	})
 
 	r.GET("/:tinyurl", func(c *gin.Context) {
+		getRequestsNumber.Inc()
+		start := time.Now()
+
 		tinyUrl := c.Params.ByName("tinyurl")
 		id, err := GetIdByTinyUrl(tinyUrl)
 		if err != nil {
@@ -62,6 +72,9 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 			}
 
 		}
+
+		elapsed := float64(time.Since(start).Milliseconds())
+		getRequestTime.Observe(elapsed)
 	})
 
 	return r

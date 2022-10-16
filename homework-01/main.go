@@ -3,8 +3,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"net/http"
 
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"main/server"
 )
@@ -41,6 +43,12 @@ func main() {
 
 	_, err = conn.Exec("create table if not exists urlsStorage(id serial primary key, long_url varchar(200));")
 	checkError(err, "Failed to create urls table")
+
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		err := http.ListenAndServe(":2112", nil)
+		checkError(err, "Unable to connect Prometheus")
+	}()
 
 	r := server.SetupRouter(conn)
 	r.Run(":8080")
