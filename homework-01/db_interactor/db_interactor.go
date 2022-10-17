@@ -50,11 +50,17 @@ func (db *DbInteractor) GetLongURL(short_url string) optional.String {
 	return optional.String{}
 }
 
-func (db *DbInteractor) InsertURL(short_url string, long_url string) {
-	rows, err := db.Conn.Query(fmt.Sprintf("INSERT INTO urlmap values ('%s', '%s')", short_url, long_url))
+func (db *DbInteractor) InsertURL(short_url string, long_url string) optional.String {
+	rows, err := db.Conn.Query(fmt.Sprintf("INSERT INTO urlmap values ('%s', '%s') ON CONFLICT(short_url) DO UPDATE SET long_url=urlmap.long_url  RETURNING urlmap.long_url", short_url, long_url))
 	if err != nil {
-		fmt.Println("Short_url already exists")
-		return
+		fmt.Println("Db error during insert")
+		return optional.String{}
 	}
 	defer rows.Close()
+	for rows.Next() {
+		var long_url_db string
+		rows.Scan(&long_url_db)
+		return optional.NewString(long_url_db)
+	}
+	return optional.String{}
 }

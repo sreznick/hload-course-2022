@@ -1,7 +1,6 @@
 package server_api
 
 import (
-	"fmt"
 	"time"
 
 	"net/http"
@@ -33,18 +32,19 @@ func putCreate(c *gin.Context, db *dbi.DbInteractor) {
 		return
 	}
 
-	fmt.Println(request.Longurl)
 	short_url := gen.GenerateShortUrl(request.Longurl)
-	db.InsertURL(short_url, request.Longurl)
-	var response = CreateResponse{request.Longurl, short_url}
-	c.IndentedJSON(http.StatusCreated, response)
+	var longurl, err = db.InsertURL(short_url, request.Longurl).Get()
+	if err != nil || request.Longurl != longurl {
+		c.IndentedJSON(http.StatusConflict, gin.H{"message": "Short url generation failed"})
+	} else {
+		var response = CreateResponse{request.Longurl, short_url}
+		c.IndentedJSON(http.StatusCreated, response)
+	}
 }
 
 func getLongURL(c *gin.Context, db *dbi.DbInteractor) {
 	shorturl := c.Param("shorturl")
-	fmt.Println(shorturl)
 	var longurl, err = db.GetLongURL(shorturl).Get()
-	fmt.Println(longurl)
 	if err != nil {
 		c.IndentedJSON(http.StatusNotFound, gin.H{"message": "url not found"})
 	} else {
