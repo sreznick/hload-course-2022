@@ -66,8 +66,6 @@ func requestGetBad() int {
 	return resp.StatusCode
 }
 
-//todo can i do same url?
-//todo issue with serial
 func main() {
 	tinyUrl := requestCreate()
 

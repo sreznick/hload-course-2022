@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"main/url_backend"
+	"math"
+	"math/rand"
 	"net/http"
 	"time"
 )
 
 const (
-	insertNewUrl = "insert into urls(url) values ($1) on conflict do nothing"
+	insertNewUrl = "insert into urls(id, url) values ($1, $2)"
 	selectByUrl  = "select id from urls where url = $1"
+	selectById   = "select * from urls where id = $1"
 )
 
 type CreateRequestJsonBody struct {
@@ -29,6 +32,42 @@ func getLongUrlFromJson(c *gin.Context) (string, error) {
 	return body.Longurl, nil
 }
 
+func createNewId(db *sql.DB, longUrl string) (*int64, error) {
+	var tinyUrlId *int64
+	for {
+		potentialId := rand.Int63n(int64(math.Pow(62, 7)))
+		err := db.QueryRow(selectById, potentialId).Scan(&tinyUrlId)
+
+		if err == nil {
+			break
+		}
+
+		if err == sql.ErrNoRows {
+			db.QueryRow(insertNewUrl, potentialId, longUrl)
+			tinyUrlId = &potentialId
+			break
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return tinyUrlId, nil
+}
+
+func hasUrl(db *sql.DB, longUrl string) (*int64, error) {
+	var tinyUrlId int64
+	err := db.QueryRow(selectByUrl, longUrl).Scan(&tinyUrlId)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	} else {
+		return &tinyUrlId, nil
+	}
+}
+
 func create(c *gin.Context, db *sql.DB) {
 	longUrl, err := getLongUrlFromJson(c)
 	if err != nil {
@@ -36,19 +75,21 @@ func create(c *gin.Context, db *sql.DB) {
 		return
 	}
 
-	_, err = db.Exec(insertNewUrl, longUrl)
+	tinyUrlId, err := hasUrl(db, longUrl)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"response": "something wrong with database: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"response": "Something went wrong with database: " + err.Error()})
 		return
 	}
 
-	var tinyUrlId int
-	err = db.QueryRow(selectByUrl, longUrl).Scan(&tinyUrlId)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"response": "something wrong with database: " + err.Error()})
-		return
+	if tinyUrlId == nil {
+		tinyUrlId, err = createNewId(db, longUrl)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"response": "Something went wrong with database: " + err.Error()})
+			return
+		}
 	}
-	tinyUrl, err := url_backend.IdToUrl(tinyUrlId)
+
+	tinyUrl, err := url_backend.IdToUrl(*tinyUrlId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"response": "Impossible to return tiny url: no more space for unique urls"})
 		return

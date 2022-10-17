@@ -71,7 +71,7 @@ func TestUrlToId3(t *testing.T) {
 }
 
 func TestComposition1(t *testing.T) {
-	id := 214232341
+	var id int64 = 214232341
 	url, err := IdToUrl(id)
 	if err != nil {
 		t.Error("Got exception")
@@ -85,7 +85,7 @@ func TestComposition1(t *testing.T) {
 }
 
 func TestComposition2(t *testing.T) {
-	id := 57731386987
+	var id int64 = 57731386987
 	url, err := IdToUrl(id)
 	if err != nil {
 		t.Error("Got exception")
@@ -102,7 +102,7 @@ func TestComposition2(t *testing.T) {
 }
 
 func TestComposition3(t *testing.T) {
-	id := 314234321234
+	var id int64 = 314234321234
 	url, err := IdToUrl(id)
 	if err != nil {
 		t.Error("Got exception")

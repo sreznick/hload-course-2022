@@ -6,7 +6,7 @@ const (
 	domain = 62
 )
 
-func IdToUrl(id int) (string, error) {
+func IdToUrl(id int64) (string, error) {
 	bytes := make([]byte, 7)
 
 	for i, _ := range bytes {
@@ -22,9 +22,9 @@ func IdToUrl(id int) (string, error) {
 	return string(bytes), nil
 }
 
-func UrlToId(url string) (int, error) {
+func UrlToId(url string) (int64, error) {
 	bytes := []byte(url)
-	id := 0
+	var id int64 = 0
 
 	for i := len(bytes) - 1; i >= 0; i-- {
 		id *= domain
@@ -39,7 +39,7 @@ func UrlToId(url string) (int, error) {
 	return id, nil
 }
 
-func intToByte(id int) (byte, error) {
+func intToByte(id int64) (byte, error) {
 	if id > domain {
 		return '0', fmt.Errorf("id out of domain")
 	}
@@ -55,17 +55,17 @@ func intToByte(id int) (byte, error) {
 	return byte('0' + (id - 52)), nil
 }
 
-func byteToInt(b byte) (int, error) {
+func byteToInt(b byte) (int64, error) {
 	if b >= 'a' && b <= 'z' {
-		return int(b - 'a'), nil
+		return int64(b - 'a'), nil
 	}
 
 	if b >= 'A' && b <= 'Z' {
-		return int(b - 'A' + 26), nil
+		return int64(b - 'A' + 26), nil
 	}
 
 	if b >= '0' && b <= '9' {
-		return int(b - '0' + 52), nil
+		return int64(b - '0' + 52), nil
 	}
 
 	return 0, fmt.Errorf("wrong character")

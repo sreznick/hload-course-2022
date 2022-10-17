@@ -35,7 +35,7 @@ func main() {
 		panic("exit")
 	}
 
-	_, err = conn.Exec("create table if not exists urls(id serial, url varchar unique)")
+	_, err = conn.Exec("create table if not exists urls(id bigint, url varchar unique)")
 	if err != nil {
 		fmt.Println("Failed to create table", err)
 		panic("exit")
