@@ -14,26 +14,25 @@ const (
 )
 
 type PutRequestBody struct {
-	longurl string `json:"longurl"`
+	Longurl string `json:"longurl"`
 }
 
 func putRequest(db *sql.DB, c *gin.Context) {
 	request := PutRequestBody{}
 	err := c.BindJSON(&request)
-
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"response": "wrong longurl"})
 		return
 	}
 
-	longUrl := request.longurl
+	longUrl := request.Longurl
 	var id int
 
 	err = db.QueryRow(findByUrl, longUrl).Scan(&id)
 	if err != nil {
 		_, insert_err := db.Exec(insertUrl, longUrl)
 		if insert_err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"response": "insert error"})
+			c.JSON(http.StatusInternalServerError, gin.H{"response": "insert error " + err.Error()})
 			return
 		}
 		_ = db.QueryRow(findByUrl, longUrl).Scan(&id)

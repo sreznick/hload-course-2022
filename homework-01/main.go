@@ -31,6 +31,12 @@ func main() {
 		panic("exit")
 	}
 
+	_, err = conn.Exec("CREATE TABLE IF NOT EXISTS urlsStorage(id serial primary key, long_url varchar(200));")
+	if err != nil {
+		fmt.Println("Failed to create urls table", err)
+		panic("exit")
+	}
+
 	r := SetupRouter(conn)
 	r.Run(":8080")
 }

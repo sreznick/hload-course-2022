@@ -14,6 +14,7 @@ func IdToTinyUrl(id int) (string, error) {
 
 	for i := 0; i < maxLen; i++ {
 		bytes[i] = intToByte(id % alphabet)
+		id /= alphabet
 	}
 
 	return string(bytes), nil
@@ -53,16 +54,16 @@ func TinyUrlToId(url string) (int, error) {
 }
 
 func byteToInt(b byte) (int, error) {
+	if b >= '0' && b <= '9' {
+		return int(b - '0'), nil
+	}
+
 	if b >= 'a' && b <= 'z' {
-		return int(b - 'a'), nil
+		return int(b - 'a' + 10), nil
 	}
 
 	if b >= 'A' && b <= 'Z' {
-		return int(b - 'A' + 26), nil
-	}
-
-	if b >= '0' && b <= '9' {
-		return int(b - '0' + 52), nil
+		return int(b - 'A' + 36), nil
 	}
 
 	return 0, fmt.Errorf("wrong symbol")
