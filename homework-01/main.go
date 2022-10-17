@@ -4,9 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/lib/pq"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"main/server_backend"
-	"net/http"
 )
 
 const SQL_DRIVER = "postgres"
@@ -19,7 +17,6 @@ const (
 	dbname   = "hload"
 )
 
-//TODO decompose
 func main() {
 	fmt.Println(sql.Drivers())
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
@@ -44,15 +41,9 @@ func main() {
 		panic("exit")
 	}
 
-	http.Handle("/metrics", promhttp.Handler())
-	go func() {
-		err := http.ListenAndServe(":2112", nil)
-		if err != nil {
-			panic("Problems with prometheus: " + err.Error())
-		}
-	}()
-
+	pr := server_backend.SetupPrometheusRouter()
 	r := server_backend.SetupRouter(conn)
+	go pr.Run(":2112")
 	err = r.Run(":8080")
 	if err != nil {
 		panic("Something wrong with router: " + err.Error())

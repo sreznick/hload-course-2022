@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"sync"
 )
 
 type CreateResponse struct {
-	Longurl string
-	Tinyurl string
+	Longurl string `json:"longurl"`
+	Tinyurl string `json:"tinyurl"`
 }
 
 func requestCreate() string {
@@ -20,19 +19,27 @@ func requestCreate() string {
 	var jsonData = []byte(`{
 		"longurl": "https://codeforces.com/"
 	}`)
-	request, error := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
-	request.Header.Set("Content-Type", "application/json; charset=UTF-8")
+	request, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		panic(err)
+	}
 
 	client := &http.Client{}
-	response, error := client.Do(request)
-	if error != nil {
-		panic(error)
+	response, err := client.Do(request)
+	if err != nil {
+		panic(err)
 	}
 	defer response.Body.Close()
 
-	body, _ := ioutil.ReadAll(response.Body)
 	var responseJson CreateResponse
-	json.Unmarshal(body, &responseJson)
+	err = json.NewDecoder(response.Body).Decode(&responseJson)
+	if err != nil {
+		panic(err)
+	}
+
+	if responseJson.Tinyurl == "" {
+		panic("aaaaa " + responseJson.Longurl)
+	}
 
 	return responseJson.Tinyurl
 }
@@ -60,6 +67,7 @@ func requestGetBad() int {
 }
 
 //todo can i do same url?
+//todo issue with serial
 func main() {
 	tinyUrl := requestCreate()
 
@@ -71,44 +79,36 @@ func main() {
 		for i := 0; i < 10000; i++ {
 			url := requestCreate()
 			if url != tinyUrl {
-				panic("new url appeared")
-			}
-
-			if i%100 == 0 {
-				fmt.Printf("CREATE: %d/%d\n", i+1, 10000)
+				panic(fmt.Sprintf("new url appeared: %s %s %d", url, tinyUrl, i))
 			}
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 100000; i++ {
-			code := requestGetGood(tinyUrl)
-			if code != 200 {
-				panic("returned code not 200")
+	wg.Add(100)
+	for i := 0; i < 100; i++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				code := requestGetGood(tinyUrl)
+				if code != 200 {
+					panic(fmt.Sprintf("returned code not 200 %d", i))
+				}
 			}
+		}()
+	}
 
-			if i%1000 == 0 {
-				fmt.Printf("GET GOOD: %d/%d\n", i+1, 100000)
+	wg.Add(100)
+	for i := 0; i < 100; i++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				code := requestGetBad()
+				if code != 404 {
+					panic(fmt.Sprintf("returned code not 404 %d", i))
+				}
 			}
-		}
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 100000; i++ {
-			code := requestGetBad()
-			if code != 404 {
-				panic("returned code not 404")
-			}
-
-			if i%1000 == 0 {
-				fmt.Printf("GET BAD: %d/%d\n", i+1, 100000)
-			}
-		}
-	}()
+		}()
+	}
 
 	wg.Wait()
 }

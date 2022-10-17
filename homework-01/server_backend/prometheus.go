@@ -1,8 +1,10 @@
 package server_backend
 
 import (
+	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "github.com/prometheus/client_golang/prometheus/promhttp"
 	_ "net/http"
 )
@@ -31,7 +33,7 @@ var (
 
 	createOpTime = promauto.NewSummary(prometheus.SummaryOpts{
 		Name: "create_op_time",
-		Help: "Time of `get` operation processing",
+		Help: "Time of `create` operation processing",
 	})
 
 	getOpProcessed = promauto.NewCounter(prometheus.CounterOpts{
@@ -44,3 +46,13 @@ var (
 		Help: "Time of `get` operation processing",
 	})
 )
+
+func SetupPrometheusRouter() *gin.Engine {
+	r := gin.Default()
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(createOpProcessed, createOpTime, getOpProcessed, getOpTime)
+	handler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+
+	r.GET("/metrics", gin.WrapH(handler))
+	return r
+}
