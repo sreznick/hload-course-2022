@@ -1,51 +1,72 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "net/http"
-
-    "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
+	"fmt"
+	_ "github.com/lib/pq"
+	_ "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"io/ioutil"
+	"net/http"
+	"urlShortener/utils"
+	_ "urlShortener/utils"
 )
 
-const SQL_DRIVER = "postgres"
-const SQL_CONNECT_URL = "postgres://postgres:postgres@localhost"
-
-func setupRouter() *gin.Engine {
-	r := gin.Default()
-
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "pong")
-	})
-
-	r.GET("/user/:name", func(c *gin.Context) {
-		user := c.Params.ByName("name")
-		if user == "vasya" {
-			c.JSON(http.StatusOK, gin.H{"user": user, "value": "12345"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{"user": user, "status": "no value"})
-		}
-	})
-
-	return r
-}
-
 func main() {
-    fmt.Println(sql.Drivers())
-    conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
-    if err != nil {
-        fmt.Println("Failed to open", err)
-        panic("exit")
-    }
 
-    err = conn.Ping()
-    if err != nil {
-        fmt.Println("Failed to ping database", err)
-        panic("exit")
-    }
+	b, err := ioutil.ReadFile("pass.conf")
+	if err != nil {
+		fmt.Print(err)
+		return
+	}
 
+	// convert bytes to string
+	pass := string(b)
 
-	r := setupRouter()
-	r.Run(":8080")
+	server := &utils.SSH{
+		Ip:   "217.25.88.166",
+		User: "root",
+		Port: 22,
+		Cert: pass,
+	}
+
+	err = server.Connect(utils.CERT_PASSWORD)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	defer server.Close()
+
+	utils.InitConection(*server)
+
+	client := &utils.DBConnect{
+		Ip:   "localhost",
+		User: "postgres",
+		Name: "url_shortener",
+		Cert: pass}
+
+	err = client.Open()
+
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	defer client.Close()
+
+	utils.InitData(client)
+
+	utils.RegPrometheus()
+	http.Handle("/metrics", promhttp.Handler())
+
+	http.HandleFunc("/", utils.HandleGet)
+	http.HandleFunc("/ping", utils.HandlePing)
+	http.HandleFunc("/create", utils.HandlePut)
+
+	fmt.Println("Server started")
+
+	if err := http.ListenAndServe(":8000", nil); err != nil {
+		panic("error!")
+	}
+
 }
