@@ -3,8 +3,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"net/http"
 
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const SQL_DRIVER = "postgres"
@@ -36,6 +38,14 @@ func main() {
 		fmt.Println("Failed to create urls table", err)
 		panic("exit")
 	}
+
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		err := http.ListenAndServe(":2112", nil)
+		if err != nil {
+			panic("Problems with prometheus: " + err.Error())
+		}
+	}()
 
 	r := SetupRouter(conn)
 	r.Run(":8080")

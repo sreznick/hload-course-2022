@@ -3,8 +3,32 @@ package main
 import (
 	"database/sql"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	putRequestCnt = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "put_request_cnt",
+		Help: "Number of /create PUT requests",
+	})
+	getRequestCnt = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "get_request_cnt",
+		Help: "Number of /:tinyurl GET requests",
+	})
+	putRequestTime = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "put_request_time",
+		Help: "Time of /create PUT request",
+	})
+
+	getRequestTime = promauto.NewSummary(prometheus.SummaryOpts{
+		Name: "get_request_time",
+		Help: "Time of /:tinyurl GET request",
+	})
 )
 
 const (
@@ -69,11 +93,17 @@ func SetupRouter(db *sql.DB) *gin.Engine {
 	r := gin.Default()
 
 	r.PUT("/create", func(c *gin.Context) {
+		putRequestCnt.Inc()
+		start := time.Now()
 		putRequest(db, c)
+		putRequestTime.Observe(float64(time.Since(start).Milliseconds()))
 	})
 
 	r.GET("/:tinyurl", func(c *gin.Context) {
+		getRequestCnt.Inc()
+		start := time.Now()
 		getRequest(db, c)
+		getRequestTime.Observe(float64(time.Since(start).Milliseconds()))
 	})
 
 	return r
