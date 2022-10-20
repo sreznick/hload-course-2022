@@ -1,7 +1,8 @@
 ### Запуск
 > docker-compose up --build server
 
-###Архитектура базы данных
+#Архитектура базы данных
+
 >![Диаграмма без названия drawio (3)](https://user-images.githubusercontent.com/55112338/197050416-f80302e2-d662-4c68-9dc2-d109b9d317f8.png)
 
 
