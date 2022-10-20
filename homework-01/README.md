@@ -1,3 +1,6 @@
+### Запуск
+> docker-compose up --build server
+
 
 ### Задание 1
 
