@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"math/rand"
 	"net/http"
@@ -44,6 +45,7 @@ type create struct {
 var links = []create{}
 
 func main() {
+
 	fmt.Println(sql.Drivers())
 	conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
 	if err != nil {
@@ -57,16 +59,23 @@ func main() {
 		panic("exit")
 	}
 
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		http.ListenAndServe(":2112", nil)
+	}()
+
 	r := setupRouter()
 
 	r.PUT("/create", func(c *gin.Context) { //User make put request
 		var usersJSONLongUrl create //make new struct
 		if err := c.BindJSON(&usersJSONLongUrl); err != nil {
-			return
+			fmt.Println("Failed", err)
+			panic("exit")
 		}
 		links = append(links, usersJSONLongUrl) //add to massive of slices
 		linkBigFromUser := usersJSONLongUrl.LONGURL
 		links = nil //delete last slice
+		fmt.Println(links)
 		var nameOfSearchingLinkInDB string
 		err = conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB) //check is link in the db
 		if err != nil {                                                                                                   //if db does not have a link
@@ -76,8 +85,8 @@ func main() {
 				"0123456789")
 			var buildTinyUrl strings.Builder
 			for i := 0; i < 7; i++ {
-				buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))]) //build random tinyurl
-			}
+				buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
+			} //build random tinyurl
 			shortLinkForDB := buildTinyUrl.String()
 			stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
 			if err != nil {
@@ -110,6 +119,6 @@ func main() {
 			c.Abort()
 		}
 	})
-	r.Run(":8080")
 
+	r.Run(":8080")
 }
