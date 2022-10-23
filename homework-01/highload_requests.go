@@ -72,7 +72,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		for i := 1; i <= FAILED_GET_RESPONSES_NUMBER; i++ {
-			createGetRequest("abracadabra")
+			createGetRequest("some incorrect request text")
 		}
 	}()
 	wg.Wait()
