@@ -44,7 +44,7 @@ func (db *UrlTable) GetTinyUrlIdByLongUrl(url string) (int64, error) {
 	return tinyUrlId, err
 }
 
-func (db *UrlTable) GetLongUrlByTinyUrlId(id int) (string, error) {
+func (db *UrlTable) GetLongUrlByTinyUrlId(id int64) (string, error) {
 	var longUrl string
 	err := db.Connection.QueryRow(selectById, id).Scan(&longUrl)
 	return longUrl, err
