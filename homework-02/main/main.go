@@ -7,12 +7,6 @@ import (
 )
 
 func main() {
-	/*c, _, err := zk.Connect([]string{"84.201.138.191:2181"}, time.Minute) //*10)
-	if err != nil {
-		panic(err)
-	}
-	_, error := c.Create("/aisakova/dqueues/test", []byte("test"), 0, nil)
-	fmt.Println(error)*/
 	redisOptions := redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
