@@ -73,6 +73,7 @@ func Open(name string, nShards int, addresses *[]string) (DQueue, error) {
 
 	}
 	d := DQueue{name: name, nShards: nShards, hosts: addresses, questionsCount: 0, lock: false}
+	fmt.Println(*addresses)
 	dqueues[key] = &d
 	return d, nil
 
@@ -95,6 +96,7 @@ func (d *DQueue) Push(value string) error {
 
 	for (err != nil || tries == 0) && tries < d.nShards {
 		cfgs.redisOptions.Addr = (*d.hosts)[(d.questionsCount+tries)%d.nShards]
+		//fmt.Println(cfgs.redisOptions)
 		rdb := redis.NewClient(cfgs.redisOptions)
 		err = rdb.Do(cfgs.ctx, "rpush", "aisakova", time.Now().String()+"_"+value).Err()
 		tries++

@@ -2,6 +2,9 @@ package main
 
 import (
 	"dqueue"
+	"fmt"
+	"io/ioutil"
+	"strings"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -13,11 +16,15 @@ func main() {
 		DB:       0,  // use default DB
 	}
 
-	//hosts := []string{"localhost:7000", "localhost:7001", "localhost:7002", "localhost:7003"}
-	hosts := []string{"158.160.9.8:6379", "51.250.106.140:6379", "158.160.19.212:6379", "158.160.19.2:6379"}
-	//hosts := []string{"localhost:6379"}
+	data, err := ioutil.ReadFile("hosts.txt")
+	if err != nil {
+		fmt.Println(err)
+	}
+	dataString := string(data)
+	hosts := strings.Split(dataString, " ")
+
 	dqueue.Config(&redisOptions)
-	firstD, _ := dqueue.Open("first", 4, &hosts)
+	firstD, _ := dqueue.Open("first", len(hosts), &hosts)
 	firstD.Push("aaa1")
 	firstD.Push("aaa2")
 	firstD.Push("aaa3")
