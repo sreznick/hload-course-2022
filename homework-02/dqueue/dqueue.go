@@ -1,29 +1,46 @@
 package dqueue
 
 import (
-//    "fmt"
-//    "context"
+	//    "fmt"
+	//    "context"
 
-    "github.com/go-redis/redis/v8"
-//    "github.com/go-zookeeper/zk"
+	"context"
+	"fmt"
+	"strings"
+	"time"
 
+	"github.com/go-redis/redis/v8"
+	//    "github.com/go-zookeeper/zk"
 )
 
 /*
  * Можно создавать несколько очередей
  *
  * Для клиента они различаются именами
- * 
+ *
  * В реализации они могут потребовать вспомогательных данных
- * Для них - эта структура. Можете определить в ней любые поля 
+ * Для них - эта структура. Можете определить в ней любые поля
  */
-type DQueue struct {
+type Configs struct {
+	redisOptions *redis.Options
+	ctx          context.Context
 }
+
+type DQueue struct {
+	name           string
+	nShards        int
+	hosts          *[]string
+	questionsCount int
+}
+
+var cfgs = Configs{}
 
 /*
  * Запомнить данные и везде использовать
  */
-func Config(redisOptions *redis.Options, zkCluster []string) {
+func Config(redisOptions *redis.Options) {
+	cfgs.redisOptions = redisOptions
+	cfgs.ctx = context.Background()
 }
 
 /*
@@ -40,28 +57,77 @@ func Config(redisOptions *redis.Options, zkCluster []string) {
  *
  * Отдельные узлы Redis-кластера могут выпадать. Availability очереди в целом
  * не должна от этого страдать
- *  
+ *
  */
-func Open(name string, nShards int) (DQueue, error) {
-    return DQueue{}, nil
+func Open(name string, nShards int, addresses *[]string) (DQueue, error) {
+	return DQueue{name: name, nShards: nShards, hosts: addresses, questionsCount: 0}, nil
+
 }
 
 /*
  * Пишем в очередь. Каждый следующий Push - в следующий шард
- * 
+ *
  * Если шард упал - пропускаем шард, пишем в следующий по очереди
  */
-func (*DQueue) Push(value string) error {
-    return nil
+func (d *DQueue) Push(value string) error {
+	var err error
+	tries := 0
+	d.questionsCount++
+	for (err != nil || tries == 0) && tries < d.nShards {
+		cfgs.redisOptions.Addr = (*d.hosts)[(d.questionsCount+tries)%d.nShards]
+		rdb := redis.NewClient(cfgs.redisOptions)
+		err = rdb.Do(cfgs.ctx, "rpush", "aisakova", time.Now().String()+"_"+value).Err()
+		tries++
+
+	}
+	return err
 }
 
 /*
  * Читаем из очереди
  *
  * Из того шарда, в котором самое раннее сообщение
- * 
+ *
  */
-func (*DQueue) Pull() (string, error) {
-    return "", nil
-}
+func (d *DQueue) Pull() (string, error) {
+	var err error
+	var minTimeClient *redis.Client
+	minValue := ""
+	minTime := time.Now().String()
 
+	for i := 0; i < d.nShards; i++ {
+		cfgs.redisOptions.Addr = (*d.hosts)[i]
+		rdb := redis.NewClient(cfgs.redisOptions)
+		value, getErr := rdb.Do(cfgs.ctx, "lindex", "aisakova", 0).Result()
+		if getErr == nil {
+			valueString := fmt.Sprintf("%v", value)
+			timestamp := strings.Split(valueString, "_")[0]
+			//Временнные метки состоят из цифр, недостающие разряды заполняются нулями. Поэтому можем сравнивать, как строки
+			if timestamp < minTime {
+				_, popErr := rdb.Do(cfgs.ctx, "lpop", "aisakova", 1).Result()
+				if popErr == nil {
+					if minTimeClient != nil {
+						minTimeClient.Do(cfgs.ctx, "lpush", "aisakova", minTime+"_"+minValue)
+
+					}
+					minTime = timestamp
+					minValue = strings.Split(valueString, "_")[1]
+					minTimeClient = rdb
+
+				} else {
+					err = popErr
+				}
+
+			} else {
+				err = getErr
+			}
+		}
+
+	}
+	if minValue == "" {
+		return minValue, err
+	} else {
+		return minValue, nil
+	}
+
+}
