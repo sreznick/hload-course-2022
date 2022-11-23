@@ -5,12 +5,12 @@ import (
 	//    "context"
 
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
-	//    "github.com/go-zookeeper/zk"
 )
 
 /*
@@ -31,9 +31,11 @@ type DQueue struct {
 	nShards        int
 	hosts          *[]string
 	questionsCount int
+	lock           bool //чтобы клиенты не могли параллельно делать pull/push в одну и ту же очередь
 }
 
 var cfgs = Configs{}
+var dqueues = make(map[string]*DQueue)
 
 /*
  * Запомнить данные и везде использовать
@@ -60,7 +62,19 @@ func Config(redisOptions *redis.Options) {
  *
  */
 func Open(name string, nShards int, addresses *[]string) (DQueue, error) {
-	return DQueue{name: name, nShards: nShards, hosts: addresses, questionsCount: 0}, nil
+	key := name
+	value, found := dqueues[key]
+	if found {
+		if (*value).nShards != nShards {
+			panic("Dequeue alredy exists on different hosts")
+		} else {
+			return *value, nil
+		}
+
+	}
+	d := DQueue{name: name, nShards: nShards, hosts: addresses, questionsCount: 0, lock: false}
+	dqueues[key] = &d
+	return d, nil
 
 }
 
@@ -70,9 +84,15 @@ func Open(name string, nShards int, addresses *[]string) (DQueue, error) {
  * Если шард упал - пропускаем шард, пишем в следующий по очереди
  */
 func (d *DQueue) Push(value string) error {
+	if d.lock {
+		return errors.New("resource is currently locked; wait for a while")
+	}
+
 	var err error
 	tries := 0
 	d.questionsCount++
+	d.lock = true
+
 	for (err != nil || tries == 0) && tries < d.nShards {
 		cfgs.redisOptions.Addr = (*d.hosts)[(d.questionsCount+tries)%d.nShards]
 		rdb := redis.NewClient(cfgs.redisOptions)
@@ -80,6 +100,7 @@ func (d *DQueue) Push(value string) error {
 		tries++
 
 	}
+	d.lock = false
 	return err
 }
 
@@ -90,10 +111,15 @@ func (d *DQueue) Push(value string) error {
  *
  */
 func (d *DQueue) Pull() (string, error) {
+	if d.lock {
+		return "", errors.New("resource is currently locked; wait for a while")
+	}
+
 	var err error
 	var minTimeClient *redis.Client
 	minValue := ""
 	minTime := time.Now().String()
+	d.lock = true
 
 	for i := 0; i < d.nShards; i++ {
 		cfgs.redisOptions.Addr = (*d.hosts)[i]
@@ -124,6 +150,7 @@ func (d *DQueue) Pull() (string, error) {
 		}
 
 	}
+	d.lock = false
 	if minValue == "" {
 		return minValue, err
 	} else {
