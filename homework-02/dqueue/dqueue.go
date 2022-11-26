@@ -2,12 +2,15 @@ package dqueue
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/go-zookeeper/zk"
 )
 
 /*
@@ -24,15 +27,14 @@ type Configs struct {
 }
 
 type DQueue struct {
-	name           string
-	nShards        int
-	hosts          *[]string
-	questionsCount int
-	lock           bool //чтобы клиенты не могли параллельно делать pull/push в одну и ту же очередь
+	Name           string
+	NShards        int
+	Hosts          *[]string
+	QuestionsCount int
+	Lock           bool //чтобы клиенты не могли параллельно делать pull/push в одну и ту же очередь
 }
 
 var cfgs = Configs{}
-var dqueues = make(map[string]*DQueue)
 
 /*
  * Запомнить данные и везде использовать
@@ -58,22 +60,26 @@ func Config(redisOptions *redis.Options) {
  * не должна от этого страдать
  *
  */
-func Open(name string, nShards int, addresses *[]string) (DQueue, error) {
-	key := name
-	value, found := dqueues[key]
-	if found {
-		if (*value).nShards != nShards {
-			panic("Dequeue alredy exists on different hosts")
-		} else {
-			return *value, nil
-		}
-
+func Open(name string, nShards int, addresses *[]string, c *zk.Conn) (DQueue, error) {
+	nShardsPath := "/zookeeper/aisakova" + "/" + name + "/" + strconv.Itoa(nShards)
+	dequeuePath := "/zookeeper/aisakova" + "/" + name
+	check, _, err := c.Exists(nShardsPath)
+	if check {
+		var d DQueue
+		rawData, _, err := c.Get(nShardsPath)
+		err = json.Unmarshal(rawData, &d)
+		return d, err
 	}
-	d := DQueue{name: name, nShards: nShards, hosts: addresses, questionsCount: 0, lock: false}
-	fmt.Println(*addresses)
-	dqueues[key] = &d
-	return d, nil
-
+	check, _, err = c.Exists(dequeuePath)
+	if check {
+		return DQueue{}, errors.New("Dequeue alredy exists on different hosts")
+	}
+	d := DQueue{Name: name, NShards: nShards, Hosts: addresses, QuestionsCount: 0, Lock: false}
+	_, err = c.Create(dequeuePath, []byte("dequeueFolder"), 0, zk.WorldACL(zk.PermAll))
+	_, err = c.Create(nShardsPath, []byte("nShardsFolder"), 0, zk.WorldACL(zk.PermAll))
+	marshalDequeue, err := json.Marshal(d)
+	_, err = c.Set(nShardsPath, marshalDequeue, 0)
+	return d, err
 }
 
 /*
@@ -82,24 +88,23 @@ func Open(name string, nShards int, addresses *[]string) (DQueue, error) {
  * Если шард упал - пропускаем шард, пишем в следующий по очереди
  */
 func (d *DQueue) Push(value string) error {
-	if d.lock {
+	if d.Lock {
 		return errors.New("resource is currently locked; wait for a while")
 	}
 
 	var err error
 	tries := 0
-	d.questionsCount++
-	d.lock = true
+	d.QuestionsCount++
+	d.Lock = true
 
-	for (err != nil || tries == 0) && tries < d.nShards {
-		cfgs.redisOptions.Addr = (*d.hosts)[(d.questionsCount+tries)%d.nShards]
-		//fmt.Println(cfgs.redisOptions)
+	for (err != nil || tries == 0) && tries < d.NShards {
+		cfgs.redisOptions.Addr = (*d.Hosts)[(d.QuestionsCount+tries)%d.NShards]
 		rdb := redis.NewClient(cfgs.redisOptions)
 		err = rdb.Do(cfgs.ctx, "rpush", "aisakova", time.Now().String()+"_"+value).Err()
 		tries++
 
 	}
-	d.lock = false
+	d.Lock = false
 	return err
 }
 
@@ -110,7 +115,7 @@ func (d *DQueue) Push(value string) error {
  *
  */
 func (d *DQueue) Pull() (string, error) {
-	if d.lock {
+	if d.Lock {
 		return "", errors.New("resource is currently locked; wait for a while")
 	}
 
@@ -118,10 +123,10 @@ func (d *DQueue) Pull() (string, error) {
 	var minTimeClient *redis.Client
 	minValue := ""
 	minTime := time.Now().String()
-	d.lock = true
+	d.Lock = true
 
-	for i := 0; i < d.nShards; i++ {
-		cfgs.redisOptions.Addr = (*d.hosts)[i]
+	for i := 0; i < d.NShards; i++ {
+		cfgs.redisOptions.Addr = (*d.Hosts)[i]
 		rdb := redis.NewClient(cfgs.redisOptions)
 		value, getErr := rdb.Do(cfgs.ctx, "lindex", "aisakova", 0).Result()
 		if getErr == nil {
@@ -149,7 +154,7 @@ func (d *DQueue) Pull() (string, error) {
 		}
 
 	}
-	d.lock = false
+	d.Lock = false
 	if minValue == "" {
 		return minValue, err
 	} else {
