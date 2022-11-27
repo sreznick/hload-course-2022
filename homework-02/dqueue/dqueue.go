@@ -26,7 +26,7 @@ type DQueue struct {
   NextPushHostIndex int
   NextPullHostIndex int
 
-  lockSequenceNumber int
+  lockSequenceNumber int // distributed lock sequence number, should NOT be stored in znode
 }
 
 var root = "/yakurbatov"
@@ -57,8 +57,6 @@ func Config(redisHosts []string, zkCluster []string) {
  * не должна от этого страдать
  *
  */
-
-
 func Open(name string, nShards int) (DQueue, error) {
     var nodeData = getQueueNodeData(name)
     var dqueue = DQueue{}
@@ -88,6 +86,8 @@ func Open(name string, nShards int) (DQueue, error) {
     return dqueue, nil
 }
 
+// It would be better to select shards randomly to get better distribution,
+// however current approach is OK too
 func chooseRedisShards(count int) []string {
   redisHostsRaw := ctx.Value("redis-hosts")
 
@@ -112,6 +112,7 @@ func (q *DQueue) Push(value string) error {
     return err
 }
 
+// iterate over shards untill one of them allows successful push
 func tryPushValueInRedis(queue *DQueue, value string) error {
   var index = queue.NextPushHostIndex
   var epoch = 0
@@ -170,6 +171,7 @@ func (q *DQueue) Pull() (string, error) {
     return result, err
 }
 
+// iterate over shards untill one of them allows successful pull
 func tryPullValueFromRedis(queue *DQueue) (string, error) {
   var index = queue.NextPushHostIndex
   var epoch = -1;
