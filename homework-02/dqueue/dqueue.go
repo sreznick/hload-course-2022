@@ -241,6 +241,10 @@ func Open(name string, nShards int) (DQueue, error) {
 	return dQueue, nil
 }
 
+func (d *DQueue) MoveIndex() {
+	d.curIndex = (d.curIndex + 1) % d.nShards
+}
+
 func (d *DQueue) Push(value string) error {
 	redisCluster, ok := config["redisCluster"]
 	if !ok {
@@ -253,7 +257,7 @@ func (d *DQueue) Push(value string) error {
 		err := checkAddrToRedis(d.curIndex)
 		if err != nil {
 			counter++
-			d.curIndex = (d.curIndex) % d.nShards
+			d.MoveIndex()
 
 			if counter > limit {
 				return err
@@ -276,8 +280,11 @@ func (d *DQueue) Push(value string) error {
 			return fmt.Errorf("Can't find key for slot: %w", err)
 		}
 
+		fmt.Println(addr)
 		client := redis.NewClient(&redisOptions)
 		client.RPush(client.Context(), key, value)
+
+		d.MoveIndex()
 
 		return createZNodeWithIndex(d.name, strconv.Itoa(d.curIndex))
 	}
@@ -320,18 +327,9 @@ func (d *DQueue) Pull() (string, error) {
 }
 
 func (d *DQueue) findKeyForAddr(addr string) (string, error) {
-	redisCluster, ok := config["redisCluster"]
-	if !ok {
-		return "", fmt.Errorf("Redis cluster isn't found")
-	}
-
-	redisAddr, err := nextAddress(d.name)
-	if err != nil {
-		return "", fmt.Errorf("Getting next adress failed: %w", err)
-	}
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     redisCluster[redisAddr],
+		Addr:     addr,
 		Password: "",
 		DB:       0,
 	})
