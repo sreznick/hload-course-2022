@@ -336,42 +336,34 @@ func (d *DQueue) findKeyForAddr(addr string) (string, error) {
 
 	ctx := context.Background()
 
-	slots, err := client.ClusterSlots(ctx).Result()
-
-	if err != nil {
-		return "", fmt.Errorf("Getting cluster slots failed: %w", err)
-	}
-
 	left := 0
 	right := 16000
-	flag := false
 
-	for i := range slots {
-		slot := slots[i]
-		nodes := slot.Nodes
-		for k := range nodes {
-			node := nodes[k]
-			if node.Addr == addr {
-				left = slot.Start
-				right = slot.End
-				flag = true
-				break
-			}
-
-			if node.Addr == "10.129.0.33:6379" && addr == "158.160.9.8:6379" {
-				left = slot.Start
-				right = slot.End
-				flag = true
-				break
-			}
-		}
-		if flag {
+	switch addr {
+	case "158.160.9.8:6379":
+		{
+			left = 11
+			right = 5460
 			break
 		}
-	}
-
-	if !flag {
-		return "", errors.New("Can't find target cluster")
+	case "158.160.19.212:6379":
+		{
+			left = 10923
+			right = 15911
+			break
+		}
+	case "158.160.19.2:6379":
+		{
+			left = 15912
+			right = 16383
+			break
+		}
+	case "51.250.106.140:6379":
+		{
+			left = 5461
+			right = 10922
+			break
+		}
 	}
 
 	counter := 0
@@ -380,8 +372,10 @@ func (d *DQueue) findKeyForAddr(addr string) (string, error) {
 		key := fmt.Sprintf("%s::%s::%v", prefix, d.name, counter)
 		randSlot := int(client.ClusterKeySlot(ctx, key).Val())
 
-		if left < randSlot && randSlot < right {
+		if left <= randSlot && randSlot <= right {
 			return key, nil
+		} else {
+			counter += 1
 		}
 	}
 }
