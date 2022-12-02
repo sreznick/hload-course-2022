@@ -23,7 +23,7 @@ func main() {
 		return
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 10000; i++ {
 		data := strconv.Itoa(rand.Intn(100))
 		err := dqueue.Push(data)
 		if err != nil {
@@ -32,7 +32,7 @@ func main() {
 		}
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 0; i++ {
 		data, err := dqueue.Pull()
 		if err != nil {
 			fmt.Println(err)
