@@ -35,6 +35,7 @@ type DQueue struct {
 }
 
 var cfgs = Configs{}
+var prefix = "aisakova"
 
 /*
  * Запомнить данные и везде использовать
@@ -61,8 +62,8 @@ func Config(redisOptions *redis.Options) {
  *
  */
 func Open(name string, nShards int, addresses *[]string, c *zk.Conn) (DQueue, error) {
-	nShardsPath := "/zookeeper/aisakova" + "/" + name + "/" + strconv.Itoa(nShards)
-	dequeuePath := "/zookeeper/aisakova" + "/" + name
+	nShardsPath := "/zookeeper/" + prefix + "/" + name + "/" + strconv.Itoa(nShards)
+	dequeuePath := "/zookeeper/" + prefix + "/" + name
 	check, _, err := c.Exists(nShardsPath)
 	if check {
 		var d DQueue
@@ -100,7 +101,7 @@ func (d *DQueue) Push(value string) error {
 	for (err != nil || tries == 0) && tries < d.NShards {
 		cfgs.redisOptions.Addr = (*d.Hosts)[(d.QuestionsCount+tries)%d.NShards]
 		rdb := redis.NewClient(cfgs.redisOptions)
-		err = rdb.Do(cfgs.ctx, "rpush", "aisakova", time.Now().String()+"_"+value).Err()
+		err = rdb.Do(cfgs.ctx, "rpush", prefix, time.Now().String()+"_"+value).Err()
 		tries++
 
 	}
@@ -128,16 +129,16 @@ func (d *DQueue) Pull() (string, error) {
 	for i := 0; i < d.NShards; i++ {
 		cfgs.redisOptions.Addr = (*d.Hosts)[i]
 		rdb := redis.NewClient(cfgs.redisOptions)
-		value, getErr := rdb.Do(cfgs.ctx, "lindex", "aisakova", 0).Result()
+		value, getErr := rdb.Do(cfgs.ctx, "lindex", prefix, 0).Result()
 		if getErr == nil {
 			valueString := fmt.Sprintf("%v", value)
 			timestamp := strings.Split(valueString, "_")[0]
 			//Временнные метки состоят из цифр, недостающие разряды заполняются нулями. Поэтому можем сравнивать, как строки
 			if timestamp < minTime {
-				_, popErr := rdb.Do(cfgs.ctx, "lpop", "aisakova", 1).Result()
+				_, popErr := rdb.Do(cfgs.ctx, "lpop", prefix).Result()
 				if popErr == nil {
 					if minTimeClient != nil {
-						minTimeClient.Do(cfgs.ctx, "lpush", "aisakova", minTime+"_"+minValue)
+						minTimeClient.Do(cfgs.ctx, "lpush", prefix, minTime+"_"+minValue)
 
 					}
 					minTime = timestamp
