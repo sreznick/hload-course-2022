@@ -1,6 +1,7 @@
 package main
 
 import (
+    "os"
 //    "fmt"
     "dqueue"
 //    "context"
@@ -9,11 +10,17 @@ import (
 )
 
 func main() {
-    redisOptions := redis.Options{
-        Addr:     "localhost:6379",
-        Password: "", // no password set
-        DB:       0,  // use default DB
+    in_bytes, err := os.ReadFile("file.txt")
+    if err != nil {
+        fmt.Print(err)
+        return 1
     }
+    in_adresses := strings.Split(string(in_bytes),"\n")
+    redisOptions := redis.ClusterOptions {
+        Addrs: in_adresses,
+    }
+    dqueue.Config(&redisOptions)
 
-    dqueue.Config(&redisOptions, []string{"127.0.0.1"})
+
+
 }
