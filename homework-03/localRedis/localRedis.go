@@ -2,8 +2,11 @@ package localRedis
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/rand"
 	"strconv"
+	"time"
 	"urlHandler"
 
 	"github.com/go-redis/redis/v8"
@@ -61,4 +64,20 @@ func GetTinyUrl(cluster *RedisCluster, longUrl string) (string, bool) {
 		tinyUrl = fmt.Sprintf("%v", result)
 	}
 	return tinyUrl, isNew
+}
+
+func CheckTinyUrl(cluster *RedisCluster, tinyUrl string) (string, error) {
+	rand.Seed(time.Now().UnixNano())
+	id := rand.Intn(2)
+
+	(*cluster).RedisOptions.Addr = (*cluster).Workers[id]
+	rdb := redis.NewClient(&(*cluster).RedisOptions)
+	longUrl, _ := rdb.Do((*cluster).Ctx, "get", (*cluster).Prefix+"_"+tinyUrl).Result()
+	fmt.Println(longUrl)
+	if longUrl == nil {
+		return "aaa", errors.New("no such tiny url")
+
+	}
+	return fmt.Sprintf("%v", longUrl), nil
+
 }

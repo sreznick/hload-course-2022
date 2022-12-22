@@ -4,14 +4,13 @@ import (
 	"container/list"
 	"context"
 	"fmt"
-	"localRedis"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/segmentio/kafka-go"
 )
 
 const (
-	urlTopic       = "aisakova-tinyurls"
+	urlTopic       = "aisakova-test"
 	broker1Address = "158.160.19.212:9092"
 )
 
@@ -48,16 +47,20 @@ func UrlProduce(writer *kafka.Writer, ctx context.Context, longUrl string, tinyU
 
 }
 
-func UrlConsume(reader *kafka.Reader, ctx context.Context, cluster *localRedis.RedisCluster, id int) {
-	(*cluster).RedisOptions.Addr = (*cluster).Workers[id]
-	rdb := redis.NewClient(&(*cluster).RedisOptions)
+func UrlConsume(reader *kafka.Reader, ctx context.Context) {
+	redisOptions := redis.Options{
+		Addr:     "localhost:6379",
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	}
+	rdb := redis.NewClient(&redisOptions)
 	for {
 		msg, err := reader.ReadMessage(ctx)
 		if err != nil {
 			panic("could not read message " + err.Error())
 		}
-		rdb.Do(ctx, "set", (*cluster).Prefix+"_"+string(msg.Key), string(msg.Value))
-		fmt.Println("received: ", string(msg.Key))
+		rdb.Do(ctx, "set", string(msg.Key), string(msg.Value))
+		fmt.Println("received: ", string(msg.Value))
 
 	}
 }

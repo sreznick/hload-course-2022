@@ -33,13 +33,8 @@ func main() {
 
 	urlWriter := localKafka.CreateUrlWriter()
 	urlReaders := localKafka.CreateUrlReaders(len(redisCluster.Workers))
-	//fmt.Println(redisCluster)
 
 	r := server.SetupRouter(&redisCluster, urlWriter, urlReaders)
-	/*longUrl := "https://hey"
-	tinyUrl := localRedis.GetTinyUrl(&redisCluster, longUrl)
-	fmt.Println(tinyUrl)*/
-	r.Run("0.0.0.0:26397")
-	//fmt.Println(aaa.a())
+	r.Run("0.0.0.0:26379")
 
 }

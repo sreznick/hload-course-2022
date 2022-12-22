@@ -45,6 +45,18 @@ func SetupRouter(cluster *localRedis.RedisCluster, urlWriter *kafka.Writer, urlR
 
 	})
 
+	r.GET("/:tinyurl", func(c *gin.Context) {
+
+		tinyUrl := c.Params.ByName("tinyurl")
+		longUrl, err := localRedis.CheckTinyUrl(cluster, tinyUrl)
+		if err != nil {
+			c.Writer.WriteHeader(http.StatusNotFound)
+		} else {
+			c.Redirect(http.StatusFound, longUrl)
+		}
+
+	})
+
 	return r
 
 }
