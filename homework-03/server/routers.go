@@ -2,6 +2,7 @@ package server
 
 import (
 	"container/list"
+	"fmt"
 	"localKafka"
 	"localRedis"
 	"net/http"
@@ -48,11 +49,20 @@ func SetupRouter(cluster *localRedis.RedisCluster, urlWriter *kafka.Writer, urlR
 	r.GET("/:tinyurl", func(c *gin.Context) {
 
 		tinyUrl := c.Params.ByName("tinyurl")
-		longUrl, err := localRedis.CheckTinyUrl(cluster, tinyUrl)
+		longUrl, clicks, err := localRedis.CheckTinyUrl(cluster, tinyUrl)
+		fmt.Println(clicks)
 		if err != nil {
 			c.Writer.WriteHeader(http.StatusNotFound)
 		} else {
 			c.Redirect(http.StatusFound, longUrl)
+			if (clicks != 0) && (clicks%100 == 0) {
+				clickWriter := localKafka.CreateClickWriter()
+				clickReader := localKafka.CreateClickReader()
+				go localKafka.ClickProduce(clickWriter, (*cluster).Ctx, clicks)
+				go localKafka.ClickConsume(clickReader, (*cluster).Ctx, cluster, tinyUrl)
+				time.Sleep(time.Second * 10)
+			}
+
 		}
 
 	})

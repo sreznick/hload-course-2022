@@ -59,6 +59,7 @@ func GetTinyUrl(cluster *RedisCluster, longUrl string) (string, bool) {
 		id := GetCurrentId(cluster)
 		tinyUrl = urlHandler.GenerateTinyUrl(id)
 		rdb.Do((*cluster).Ctx, "set", (*cluster).Prefix+"_"+longUrl, tinyUrl)
+		rdb.Do((*cluster).Ctx, "set", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", "0")
 	} else {
 		isNew = false
 		tinyUrl = fmt.Sprintf("%v", result)
@@ -66,18 +67,33 @@ func GetTinyUrl(cluster *RedisCluster, longUrl string) (string, bool) {
 	return tinyUrl, isNew
 }
 
-func CheckTinyUrl(cluster *RedisCluster, tinyUrl string) (string, error) {
+func IncreaseClicksCount(cluster *RedisCluster, rdb *redis.Client, tinyUrl string) int {
+	clicks := 0
+	result, _ := rdb.Do((*cluster).Ctx, "get", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks").Result()
+	if result != nil {
+		stringClicks, ok := result.(string)
+		if ok {
+			clicks, _ = strconv.Atoi(stringClicks)
+		}
+	}
+	clicks++
+	rdb.Do((*cluster).Ctx, "set", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", strconv.Itoa(clicks))
+	return clicks
+
+}
+func CheckTinyUrl(cluster *RedisCluster, tinyUrl string) (string, int, error) {
 	rand.Seed(time.Now().UnixNano())
 	id := rand.Intn(2)
 
 	(*cluster).RedisOptions.Addr = (*cluster).Workers[id]
 	rdb := redis.NewClient(&(*cluster).RedisOptions)
 	longUrl, _ := rdb.Do((*cluster).Ctx, "get", (*cluster).Prefix+"_"+tinyUrl).Result()
-	fmt.Println(longUrl)
+	//fmt.Println(longUrl)
 	if longUrl == nil {
-		return "aaa", errors.New("no such tiny url")
+		return "", 0, errors.New("no such tiny url")
 
 	}
-	return fmt.Sprintf("%v", longUrl), nil
+	clicks := IncreaseClicksCount(cluster, rdb, tinyUrl)
+	return fmt.Sprintf("%v", longUrl), clicks, nil
 
 }

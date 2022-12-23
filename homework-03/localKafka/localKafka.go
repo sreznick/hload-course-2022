@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"localRedis"
+	"strconv"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/segmentio/kafka-go"
@@ -12,6 +13,7 @@ import (
 
 const (
 	urlTopic       = "aisakova-tinyurls"
+	clickTopic     = "aisakova-clicks"
 	broker1Address = "158.160.19.212:9092"
 )
 
@@ -21,6 +23,15 @@ func CreateUrlWriter() *kafka.Writer {
 		Topic:        urlTopic,
 		RequiredAcks: 1,
 	})
+}
+
+func CreateClickWriter() *kafka.Writer {
+	return kafka.NewWriter(kafka.WriterConfig{
+		Brokers:      []string{broker1Address},
+		Topic:        clickTopic,
+		RequiredAcks: 1,
+	})
+
 }
 
 func CreateUrlReaders(nWorkers int) *list.List {
@@ -36,6 +47,13 @@ func CreateUrlReaders(nWorkers int) *list.List {
 
 }
 
+func CreateClickReader() *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers: []string{broker1Address},
+		Topic:   clickTopic,
+	})
+}
+
 func UrlProduce(writer *kafka.Writer, ctx context.Context, longUrl string, tinyUrl string) {
 	err := writer.WriteMessages(ctx, kafka.Message{
 		Key:   []byte(tinyUrl),
@@ -45,6 +63,18 @@ func UrlProduce(writer *kafka.Writer, ctx context.Context, longUrl string, tinyU
 		panic("could not write message " + err.Error())
 	}
 	fmt.Println("writes:", tinyUrl+":"+longUrl)
+
+}
+
+func ClickProduce(writer *kafka.Writer, ctx context.Context, clicks int) {
+	err := writer.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(strconv.Itoa(clicks)),
+		Value: []byte(strconv.Itoa(clicks)),
+	})
+	if err != nil {
+		panic("could not write message " + err.Error())
+	}
+	fmt.Println("writes:", clicks)
 
 }
 
@@ -60,4 +90,26 @@ func UrlConsume(reader *kafka.Reader, ctx context.Context, cluster *localRedis.R
 		fmt.Println("received: ", string(msg.Key))
 
 	}
+}
+
+func ClickConsume(reader *kafka.Reader, ctx context.Context, cluster *localRedis.RedisCluster, tinyUrl string) {
+	(*cluster).RedisOptions.Addr = (*cluster).Master
+	rdb := redis.NewClient(&(*cluster).RedisOptions)
+	for {
+		msg, err := reader.ReadMessage(ctx)
+		if err != nil {
+			panic("could not read message " + err.Error())
+		}
+		clicks, _ := rdb.Do(ctx, "get", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks").Result()
+		stringClicks, ok := clicks.(string)
+		if ok {
+			clicksCount, _ := strconv.Atoi(stringClicks)
+			clicksCount += 100
+			rdb.Do(ctx, "set", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", strconv.Itoa(clicksCount))
+		}
+
+		fmt.Println("received: ", string(msg.Value))
+
+	}
+
 }
