@@ -59,7 +59,7 @@ func GetTinyUrl(cluster *RedisCluster, longUrl string) (string, bool) {
 		id := GetCurrentId(cluster)
 		tinyUrl = urlHandler.GenerateTinyUrl(id)
 		rdb.Do((*cluster).Ctx, "set", (*cluster).Prefix+"_"+longUrl, tinyUrl)
-		rdb.Do((*cluster).Ctx, "set", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", "0")
+		rdb.Do((*cluster).Ctx, "set", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", 0)
 	} else {
 		isNew = false
 		tinyUrl = fmt.Sprintf("%v", result)
@@ -88,7 +88,6 @@ func CheckTinyUrl(cluster *RedisCluster, tinyUrl string) (string, int, error) {
 	(*cluster).RedisOptions.Addr = (*cluster).Workers[id]
 	rdb := redis.NewClient(&(*cluster).RedisOptions)
 	longUrl, _ := rdb.Do((*cluster).Ctx, "get", (*cluster).Prefix+"_"+tinyUrl).Result()
-	//fmt.Println(longUrl)
 	if longUrl == nil {
 		return "", 0, errors.New("no such tiny url")
 

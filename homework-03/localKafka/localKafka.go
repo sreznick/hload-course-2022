@@ -15,6 +15,7 @@ const (
 	urlTopic       = "aisakova-tinyurls"
 	clickTopic     = "aisakova-clicks"
 	broker1Address = "158.160.19.212:9092"
+	clickIncr      = 100
 )
 
 func CreateUrlWriter() *kafka.Writer {
@@ -100,13 +101,7 @@ func ClickConsume(reader *kafka.Reader, ctx context.Context, cluster *localRedis
 		if err != nil {
 			panic("could not read message " + err.Error())
 		}
-		clicks, _ := rdb.Do(ctx, "get", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks").Result()
-		stringClicks, ok := clicks.(string)
-		if ok {
-			clicksCount, _ := strconv.Atoi(stringClicks)
-			clicksCount += 100
-			rdb.Do(ctx, "set", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", strconv.Itoa(clicksCount))
-		}
+		rdb.Do(ctx, "incrby", (*cluster).Prefix+"_"+tinyUrl+"_"+"clicks", clickIncr)
 
 		fmt.Println("received: ", string(msg.Value))
 
