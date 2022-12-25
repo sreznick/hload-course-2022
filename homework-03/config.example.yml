@@ -1,0 +1,15 @@
+shared: &shared
+  topics:
+    tinurls: yakurbatov-tinyurls
+    clicks: yakurbatov-clicks
+  kafka: localhost:9092
+
+
+master:
+  <<: *shared
+  postgres: postgres://postgres:postgres@localhost:5432/yakurbatov
+  socket: :3001
+worker:
+  <<: *shared
+  redis: localhost:6379
+  socket: :3002
