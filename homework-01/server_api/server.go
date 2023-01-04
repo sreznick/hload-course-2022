@@ -32,13 +32,20 @@ func putCreate(c *gin.Context, db *dbi.DbInteractor) {
 		return
 	}
 
-	short_url := gen.GenerateShortUrl(request.Longurl)
-	var longurl, err = db.InsertURL(short_url, request.Longurl).Get()
-	if err != nil || request.Longurl != longurl {
-		c.IndentedJSON(http.StatusConflict, gin.H{"message": "Short url generation failed"})
-	} else {
-		var response = CreateResponse{request.Longurl, short_url}
-		c.IndentedJSON(http.StatusCreated, response)
+	url_id, short_url := gen.GenerateShortUrl(request.Longurl)
+	for {
+		var longurl, err = db.InsertURL(short_url, request.Longurl).Get()
+		if err != nil {
+			c.IndentedJSON(http.StatusConflict, gin.H{"message": "Short url generation failed"})
+			break
+		} else if request.Longurl != longurl {
+			url_id = (url_id + 51) % gen.MAX_URL_NUMBER
+			short_url = gen.IntToShortUrl(url_id)
+		} else {
+			var response = CreateResponse{request.Longurl, short_url}
+			c.IndentedJSON(http.StatusCreated, response)
+			break
+		}
 	}
 }
 

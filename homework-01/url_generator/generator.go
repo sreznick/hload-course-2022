@@ -10,7 +10,7 @@ var SHORT_URL_LEN = 7
 var ALPHABET_LEN = int64(26)
 var MAX_URL_NUMBER = int64(math.Pow(float64(CHARS_NUM), float64(SHORT_URL_LEN)))
 
-func intToShortUrl(n int64) string {
+func IntToShortUrl(n int64) string {
 
 	if n <= 0 || n >= MAX_URL_NUMBER {
 		panic("Number out of bound")
@@ -38,6 +38,7 @@ func hash(s string) int64 {
 	return int64(h.Sum64())
 }
 
-func GenerateShortUrl(long_url string) string {
-	return intToShortUrl(((hash(long_url) % MAX_URL_NUMBER) + MAX_URL_NUMBER) % MAX_URL_NUMBER)
+func GenerateShortUrl(long_url string) (int64, string) {
+	url_id := ((hash(long_url) % MAX_URL_NUMBER) + MAX_URL_NUMBER) % MAX_URL_NUMBER
+	return url_id, IntToShortUrl(url_id)
 }
