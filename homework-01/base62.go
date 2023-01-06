@@ -19,7 +19,7 @@ func toBase62(num uint64) string {
 		builder.WriteString(string(characterSet[r]))
 	}
 	result := builder.String()
-	url := strings.Repeat("0", int(math.Max(0, float64(7-len(result))))) + result
+	url := result + strings.Repeat("0", int(math.Max(0, float64(7-len(result)))))
 	if len(url) > 7 {
 		panic("All tinyurl are busy!")
 	}
@@ -28,8 +28,7 @@ func toBase62(num uint64) string {
 
 func formBase62(encoded string) (uint64, error) {
 	var res uint64
-	for index, char := range encoded {
-		pow := len(encoded) - (index + 1)
+	for pow, char := range encoded {
 		pos := strings.IndexRune(characterSet, char)
 		if pos == -1 {
 			return 0, errors.New("Invalic char: " + string(char))

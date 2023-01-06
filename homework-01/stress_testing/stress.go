@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"sync"
 )
@@ -21,10 +20,6 @@ const (
 type UrlSerializer struct {
 	LongUrl string `json:"longurl"`
 	TinyUrl string `json:"tinyurl"`
-}
-
-func pick(list []string) string {
-	return list[rand.Intn(len(list))]
 }
 
 func requestCreate(longurl string) string {
@@ -66,6 +61,9 @@ func requestGet(tinyurl string) int {
 		panic(err)
 	}
 	response, err := client.Do(request)
+	if err != nil {
+		panic(err)
+	}
 	return response.StatusCode
 }
 
@@ -85,32 +83,62 @@ func runCreate() {
 	}
 
 	for i := 0; i < createResponseCount; i++ {
-		longurl := pick(urls)
+		randomSuffix := RandomString(5, 6) // Approximate 77% will be unique
+		longurl := Pick(urls) + randomSuffix
 		requestCreate(longurl)
 	}
 	fmt.Println("Finish create requests")
 }
 
+func checkValidUrl(url string) {
+	code := requestGet(url)
+	if code != 302 {
+		panic(fmt.Sprintf("Invalid response code %d, but it should be 302", code))
+	}
+}
+
 func runGetSuccess() {
 	fmt.Println("Start success get requests")
-	tinyUrl := requestCreate("https://emkn.ru")
-	for i := 0; i < getSuccessResponseCount; i++ {
-		code := requestGet(tinyUrl)
-		if code != 302 {
-			panic(fmt.Sprintf("Invalid response code %d, but it should be 302", code))
+	testsForOneUrl := 100
+	urlsCount := getSuccessResponseCount / testsForOneUrl
+	for i := 0; i < urlsCount; i++ {
+		longUrl := fmt.Sprintf("https://%s.ru", RandomString(20, 62))
+		tinyUrl := requestCreate(longUrl)
+		for j := 0; j < testsForOneUrl; j++ {
+			checkValidUrl(tinyUrl)
 		}
 	}
 	fmt.Println("Finish success get requests")
 }
 
+func checkInvalidUrl(url string) {
+	code := requestGet(url)
+	if code != 404 {
+		panic(fmt.Sprintf("Code response %d, but it should be 404", code))
+	}
+}
+
 func runGetInvalid() {
 	fmt.Println("Start bad get requests")
-	badTinyUrl := "_______"
+
+	// 1. Invaid symbols in tiny url
+	badTinyUrls := []string{
+		"_______",
+		"abdcef!",
+		"аофыдвл",
+		"abdcef",
+		"a",
+		"",
+	}
+	for _, badUrl := range badTinyUrls {
+		checkInvalidUrl(badUrl)
+	}
+
+	// 2. Valid symbols but tinyUrl does not exists
 	for i := 0; i < getSuccessResponseCount; i++ {
-		code := requestGet(badTinyUrl)
-		if code != 404 {
-			panic(fmt.Sprintf("Code response %d, but it should be 404", code))
-		}
+		badUrl := RandomString(6, 62) + "z" // I belive that we have less then (62^7 - 62^6) tiny urls
+
+		checkInvalidUrl(badUrl)
 	}
 	fmt.Println("Finish bad get requests")
 }

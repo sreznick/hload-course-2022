@@ -19,28 +19,21 @@ const (
 	dbname   = "shorturl"
 )
 
+const (
+	prometheusPort = ":2112"
+	routerPort     = ":8080"
+)
+
 func main() {
 	fmt.Println(sql.Drivers())
 
 	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
-
-	conn, err := sql.Open(SQL_DRIVER, psqlconn)
-	if err != nil {
-		fmt.Println("Failed to open", err)
-		panic("exit")
-	}
-
-	err = conn.Ping()
-	if err != nil {
-		fmt.Println("Failed to ping database", err)
-		panic("exit")
-	}
-
-	createTable(conn)
+	db := getDatabaseInstance()
+	db.InitDB(SQL_DRIVER, psqlconn)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go func() { http.ListenAndServe(":2112", nil) }()
+	go func() { http.ListenAndServe(prometheusPort, nil) }()
 
-	r := setupRouter(conn)
-	r.Run(":8080")
+	r := setupRouter()
+	r.Run(routerPort)
 }

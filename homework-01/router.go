@@ -1,7 +1,6 @@
 package main
 
 import (
-	"database/sql"
 	"net/http"
 	"time"
 
@@ -21,13 +20,13 @@ func parseJSON(c *gin.Context) (string, error) {
 	return body.LongUrl, nil
 }
 
-func createUrl(c *gin.Context, db *sql.DB) {
+func createUrl(c *gin.Context) {
 	longUrl, err := parseJSON(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"response": err})
 		return
 	}
-	tinyUrl, err := addUrl(db, longUrl)
+	tinyUrl, err := AddUrl(longUrl)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"response": err})
 		return
@@ -36,10 +35,10 @@ func createUrl(c *gin.Context, db *sql.DB) {
 	return
 }
 
-func getTinyUrl(c *gin.Context, db *sql.DB, tinyUrl string) {
-	longUrl, err := getUrl(db, tinyUrl)
+func getTinyUrl(c *gin.Context, tinyUrl string) {
+	longUrl, err := GetUrl(tinyUrl)
 	if err != nil {
-		c.Writer.WriteHeader(404)
+		c.JSON(http.StatusNotFound, gin.H{"response": err})
 		return
 	}
 
@@ -47,7 +46,7 @@ func getTinyUrl(c *gin.Context, db *sql.DB, tinyUrl string) {
 	return
 }
 
-func setupRouter(db *sql.DB) *gin.Engine {
+func setupRouter() *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/ping", func(c *gin.Context) {
@@ -58,7 +57,7 @@ func setupRouter(db *sql.DB) *gin.Engine {
 		createOpsProcessed.Inc()
 		startTime := time.Now()
 
-		createUrl(c, db)
+		createUrl(c)
 
 		createOpsTime.Observe(float64(time.Since(startTime).Microseconds()))
 	})
@@ -68,7 +67,7 @@ func setupRouter(db *sql.DB) *gin.Engine {
 		startTime := time.Now()
 
 		tinyUrl := c.Params.ByName("tinyurl")
-		getTinyUrl(c, db, tinyUrl)
+		getTinyUrl(c, tinyUrl)
 
 		getOpsTime.Observe(float64(time.Since(startTime).Microseconds()))
 	})
