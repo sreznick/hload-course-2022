@@ -7,7 +7,7 @@ import (
 func ConsumerRoutine(c common.KafkaConfig, rc common.RedisConfig) {
 	SetConsumerKafka(c)
 	SetRedisOpts(rc)
-	go KafkaDvij()
+	go ReadUrls()
 	r := SetupWorker()
 	err := r.Run(":8081")
 	if err != nil {

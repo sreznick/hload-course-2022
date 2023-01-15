@@ -19,7 +19,7 @@ func unpackUrlMsg(b []byte) (string, string) {
 	return p[0:d], p[d+1:]
 }
 
-func KafkaDvij() {
+func ReadUrls() {
 	ctx := context.Background()
 	for {
 		v, err := UrlsConsumer.FetchMessage(ctx)
