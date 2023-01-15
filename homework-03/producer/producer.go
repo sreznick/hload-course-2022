@@ -5,13 +5,12 @@ import (
 	"fmt"
 	_ "github.com/lib/pq"
 	"main/common"
-	"main/producer/server_backend"
 )
 
 const SQL_DRIVER = "postgres"
 
 func ProducerRoutine(c common.KafkaConfig, p common.PostgresConfig) {
-	server_backend.SetProducerKafka(c)
+	SetProducerKafka(c)
 
 	fmt.Println(sql.Drivers())
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
@@ -36,8 +35,8 @@ func ProducerRoutine(c common.KafkaConfig, p common.PostgresConfig) {
 		panic("exit")
 	}
 
-	go server_backend.GetClicks(conn)
-	r := server_backend.SetupRouter(conn)
+	go GetClicks(conn)
+	r := SetupRouter(conn)
 	err = r.Run(":8080")
 	if err != nil {
 		panic("Something wrong with router: " + err.Error())

@@ -2,11 +2,10 @@ package consumer
 
 import (
 	"main/common"
-	"main/consumer/kafka"
 )
 
 func ConsumerRoutine(c common.KafkaConfig, rc common.RedisConfig) {
-	kafka.SetConsumerKafka(c)
+	SetConsumerKafka(c)
 	SetRedisOpts(rc)
 	go KafkaDvij()
 	r := SetupWorker()

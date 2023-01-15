@@ -1,11 +1,10 @@
-package server_backend
+package producer
 
 import (
 	"database/sql"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/lib/pq"
-	"main/producer/url_backend"
 	"math"
 	"math/rand"
 	"net/http"
@@ -92,7 +91,7 @@ func create(c *gin.Context, db *sql.DB) {
 		}
 	}
 
-	tinyUrl, err := url_backend.IdToUrl(*tinyUrlId)
+	tinyUrl, err := IdToUrl(*tinyUrlId)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"response": "Impossible to return tiny url: no more space for unique urls (router:94)"})
 		return
@@ -107,7 +106,7 @@ func create(c *gin.Context, db *sql.DB) {
 
 func getUrl(c *gin.Context, db *sql.DB, urlVarName string) {
 	shortUrl := c.Params.ByName(urlVarName)
-	shortUrlId, err := url_backend.UrlToId(shortUrl)
+	shortUrlId, err := UrlToId(shortUrl)
 	if err != nil {
 		c.Writer.WriteHeader(404)
 		return

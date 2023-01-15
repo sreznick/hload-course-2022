@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"main/common"
-	"main/consumer/kafka"
 )
 
 func unpackUrlMsg(b []byte) (string, string) {
@@ -23,7 +22,7 @@ func unpackUrlMsg(b []byte) (string, string) {
 func KafkaDvij() {
 	ctx := context.Background()
 	for {
-		v, err := kafka.UrlsConsumer.FetchMessage(ctx)
+		v, err := UrlsConsumer.FetchMessage(ctx)
 
 		if err != nil {
 			fmt.Printf("Kafka error: %s\n", err)
@@ -49,7 +48,7 @@ func KafkaDvij() {
 			continue
 		}
 
-		err = kafka.UrlsConsumer.CommitMessages(ctx, v)
+		err = UrlsConsumer.CommitMessages(ctx, v)
 		if err != nil {
 			fmt.Printf("Something went wrong with Redis: %s\n", err)
 			continue
