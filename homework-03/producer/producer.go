@@ -10,21 +10,13 @@ import (
 
 const SQL_DRIVER = "postgres"
 
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "postgres"
-	password = "jaja"
-	dbname   = "hload"
-)
-
-func ProducerRoutine(c common.KafkaConfig) {
+func ProducerRoutine(c common.KafkaConfig, p common.PostgresConfig) {
 	server_backend.SetProducerKafka(c)
 
 	fmt.Println(sql.Drivers())
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+		p.Host, p.Port, p.User, p.Password, p.Dbname)
 
 	conn, err := sql.Open(SQL_DRIVER, psqlInfo)
 	if err != nil {

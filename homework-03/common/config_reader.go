@@ -24,6 +24,14 @@ type RedisConfig struct {
 	Ip string
 }
 
+type PostgresConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Dbname   string `json:"dbname"`
+}
+
 func GetKafkaConfig() KafkaConfig {
 	buf, err := os.ReadFile("configuration/conf.json")
 	if err != nil {
@@ -46,6 +54,21 @@ func GetRedisConfig() RedisConfig {
 	}
 
 	c := &RedisConfig{}
+	err = json.Unmarshal(buf, c)
+	if err != nil {
+		panic(err)
+	}
+
+	return *c
+}
+
+func GetPostgresConfig() PostgresConfig {
+	buf, err := os.ReadFile("configuration/postgres.json")
+	if err != nil {
+		panic(err)
+	}
+
+	c := &PostgresConfig{}
 	err = json.Unmarshal(buf, c)
 	if err != nil {
 		panic(err)

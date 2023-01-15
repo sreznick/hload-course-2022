@@ -16,7 +16,8 @@ func main() {
 	common.ClicksThrsh = kafkaConfig.ClicksThrsh
 
 	if typ == "producer" {
-		producer.ProducerRoutine(kafkaConfig)
+		postgresConfig := common.GetPostgresConfig()
+		producer.ProducerRoutine(kafkaConfig, postgresConfig)
 	} else if typ == "consumer" {
 		rc := common.GetRedisConfig()
 		consumer.ConsumerRoutine(kafkaConfig, rc)
