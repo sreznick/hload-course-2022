@@ -5,8 +5,9 @@ import (
 	"main/consumer/kafka"
 )
 
-func ConsumerRoutine(c common.KafkaConfig) {
+func ConsumerRoutine(c common.KafkaConfig, rc common.RedisConfig) {
 	kafka.SetConsumerKafka(c)
+	SetRedisOpts(rc)
 	go KafkaDvij()
 	r := SetupWorker()
 	err := r.Run(":8081")

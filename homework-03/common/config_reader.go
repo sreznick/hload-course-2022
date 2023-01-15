@@ -21,7 +21,7 @@ type KafkaConfig struct {
 }
 
 type RedisConfig struct {
-	ip string
+	Ip string
 }
 
 func GetKafkaConfig() KafkaConfig {

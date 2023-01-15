@@ -18,7 +18,8 @@ func main() {
 	if typ == "producer" {
 		producer.ProducerRoutine(kafkaConfig)
 	} else if typ == "consumer" {
-		consumer.ConsumerRoutine(kafkaConfig)
+		rc := common.GetRedisConfig()
+		consumer.ConsumerRoutine(kafkaConfig, rc)
 	} else {
 		fmt.Println("=(")
 	}

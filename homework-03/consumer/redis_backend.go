@@ -2,15 +2,20 @@ package consumer
 
 import (
 	"context"
+	"main/common"
 	"strconv"
 
 	"github.com/go-redis/redis/v8"
 )
 
-var redisOpts redis.Options = redis.Options{
-	Addr:     "",
-	Password: "", // no password set
-	DB:       0,  // use default DB
+var redisOpts redis.Options
+
+func SetRedisOpts(c common.RedisConfig) {
+	redisOpts = redis.Options{
+		Addr:     c.Ip,
+		Password: "",
+		DB:       0,
+	}
 }
 
 func buildKey(tinyUrl string) string {
