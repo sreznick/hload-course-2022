@@ -7,6 +7,8 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	"github.com/segmentio/kafka-go"
+	"golang.org/x/crypto/ssh"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -16,8 +18,9 @@ import (
 
 const SQL_DRIVER = "postgres"
 
-// const SQL_CONNECT_URL = "postgres://postgres:postgrespw@localhost:49153/postgres?sslmode=disable"
-const SQL_CONNECT_URL = "postgres://postgres:@51.250.106.140:22/postgres?sslmode=disable"
+//const SQL_CONNECT_URL = "postgres://postgres:postgrespw@localhost:49153/postgres?sslmode=disable"
+
+const SQL_CONNECT_URL = "postgres://postgres:@localhost:22/postgres?sslmode=disable"
 
 func setupRouter() *gin.Engine {
 	r := gin.Default()
@@ -51,6 +54,38 @@ func main() {
 	//reader.SetOffset(kafka.LastOffset)
 
 	fmt.Println(sql.Drivers())
+	//b, err := ioutil.ReadFile("pass.conf")
+	//if err != nil {
+	//	panic(err)
+	//}
+
+	key, err := ioutil.ReadFile("//users//bogdan//.ssh//id_ed25519")
+	if err != nil {
+		panic(err)
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		panic(err)
+	}
+
+	// convert bytes to string
+	pass := "postgres"
+
+	server := &SSH{
+		Ip:     "51.250.106.140",
+		User:   "mdiagilev",
+		Port:   22,
+		Cert:   pass,
+		Signer: signer,
+	}
+
+	err = server.Connect(CERT_PUBLIC_KEY_FILE)
+	if err != nil {
+		panic(err)
+	}
+
+	defer server.Close()
 	conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
 	if err != nil {
 		fmt.Println("Failed to open", err)
