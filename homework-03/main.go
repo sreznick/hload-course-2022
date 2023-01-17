@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	_ "github.com/go-redis/redis/v8"
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
@@ -64,13 +65,82 @@ func Read(topic string) {
 			Brokers:   []string{"158.160.19.212:9092"},
 			Topic:     topic,
 			Partition: 0})
-		reader.SetOffset(kafka.LastOffset)
-
+		reader.SetOffset(kafka.FirstOffset)
 		m, errorerr := reader.ReadMessage(context.Background())
 		if errorerr != nil {
 			fmt.Println("2")
 		}
+		//записываем в рэдис, переменную под рэдис сделать
+
 		fmt.Printf("message: %s = %s\n", string(m.Key), string(m.Value))
+		if errorerr := reader.Close(); errorerr != nil {
+			log.Fatal("failed to close reader:", errorerr)
+		}
+
+	}
+}
+
+func MasterReadFromTopic(conn *sqlx.DB, err error, topic string) (string, string) {
+	var link string
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"158.160.19.212:9092"},
+		Topic:     topic,
+		Partition: 0})
+	reader.SetOffset(kafka.LastOffset)
+	// пишем мастеру longurl которой нет в redis
+
+	m, errorerr := reader.ReadMessage(context.Background())
+	if errorerr != nil {
+		fmt.Println("2")
+	}
+	fmt.Printf("message from replica to Master: %s = %s\n", string(m.Key), string(m.Value))
+	if errorerr := reader.Close(); errorerr != nil {
+		log.Fatal("failed to close reader:", errorerr)
+	}
+	var nameOfSearchingLinkInDB string
+	nameOfSearchingLinkInDB = string(m.Key)
+	err = conn.QueryRow("SELECT longurl FROM links WHERE tinyurl=$1", string(m.Key)).Scan(&nameOfSearchingLinkInDB)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	link = nameOfSearchingLinkInDB
+	return link, string(m.Key) // большая, small
+}
+
+func MasterSendToTopic(longLink, shortLink, topicToReplica string) {
+	writer := &kafka.Writer{
+		Addr:  kafka.TCP("158.160.19.212:9092"),
+		Topic: topicToReplica}
+
+	error1 := writer.WriteMessages(context.Background(),
+		kafka.Message{
+			Key:   []byte(shortLink), //longurl from db
+			Value: []byte(longLink),  //tinyurl from replica
+		})
+	if error1 != nil {
+		log.Fatal("failed to write messages:1:", error1)
+	}
+	if error1 := writer.Close(); error1 != nil {
+		log.Fatal("failed to close writer:", error1)
+	}
+
+}
+
+func ReplicaReadResponseOnHerRequest(topic string) {
+	var res = true
+	for res {
+		reader := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:   []string{"158.160.19.212:9092"},
+			Topic:     topic,
+			Partition: 0})
+		reader.SetOffset(kafka.LastOffset)
+		m, errorerr := reader.ReadMessage(context.Background())
+		if errorerr != nil {
+			fmt.Println("2")
+		}
+		//записываем в рэдис, переменную под рэдис сделать
+		fmt.Printf("message with links from Master to replica: %s = %s\n", string(m.Key), string(m.Value))
 		if errorerr := reader.Close(); errorerr != nil {
 			log.Fatal("failed to close reader:", errorerr)
 		}
@@ -165,7 +235,6 @@ func main() {
 		panic(err)
 	}
 
-	// convert bytes to string
 	pass := "postgres"
 
 	server := &SSH{
@@ -196,11 +265,8 @@ func main() {
 		fmt.Println("Failed to ping database", err)
 		panic("exit")
 	}
-	r := setupRouter()
 
-	go Read("mdiagilev-test")
-	//consumer master
-	go Read("mdiagilev-test-master")
+	r := setupRouter()
 
 	r.PUT("/create", func(c *gin.Context) { //User make put request
 		var usersJSONLongUrl create //make new struct
@@ -215,7 +281,7 @@ func main() {
 
 		//check is link in the db
 		if result == true { //if db does not have a link
-			go Writer(linkBigFromUser, resultLink, "mdiagilev-test")
+			//go Writer(linkBigFromUser, resultLink, "mdiagilev-test") //5.send url
 			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": resultLink})
 		} else { //if db has a link
 
@@ -225,11 +291,64 @@ func main() {
 	})
 
 	//go Writer(linkBigFromUser, resultLink, "mdiagilev-test")
+	//go Read("mdiagilev-test-master")
+
+	go ReplicaReadResponseOnHerRequest("mdiagilev-test")
+
+	redis := Redis{Cluster: "158.160.19.212:26379"}
+	err = redis.Connect()
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer redis.Close()
 
 	r.GET("/:tiny", func(c *gin.Context) { //User make get request
-		//redis
 		tiny := c.Params.ByName("tiny")
-		go WriterToMaster(tiny, "mdiagilev-test-master")
+
+		//прочитать все что есть в топике если мы умерли,
+		ctx := context.Background()
+		var a = redis.Client.LPop(ctx, string(tiny))
+		fmt.Println("__________")
+		fmt.Println(a)
+		//redis.Client.RPush(ctx, "1", "2")
+		//потом идем в рэдис
+		//ctx := context.Background()
+		//rdb := redis.NewClient(&redis.Options{
+		//	Addr:     "localhost:6379",
+		//	Password: "", // no password set
+		//	DB:       0,  // use default DB
+		//})
+		//
+		//al2, err := rdb.Get(ctx, "key2").Result()
+		//if err == redis.Nil {
+		//	fmt.Println("key2 does not exist")
+		//} else if err != nil {
+		//	panic(err)
+		//} else {
+		//	fmt.Println("key2", val2)
+		//}
+
+		//____________________________________________________________________________________________________//
+		//если в нем нет то пишем в топик мастера
+		go WriterToMaster(tiny, "mdiagilev-test-master") // 3. request url
+		//мастер прочитает с топика мастера и пойдет в бд, заберет и вернет значение
+		var longurl string
+		var shorturl string
+		longurl, shorturl = MasterReadFromTopic(conn, err, "mdiagilev-test-master")
+		//затем отправит в топик мастер это значение
+		MasterSendToTopic(longurl, shorturl, "mdiagilev-test")
+		//реплика прочитает топик и заберет последнее
+		//go ReplicaReadResponseOnHerRequest("mdiagilev-test")
+		//читает из топика дальше и пишет в рэдис
+		//____________________________________________________________________________________________________//
+		//идем и делаем запрос в рэдис
+
+		//go Read("mdiagilev-test-master")
+
+		//consumer master
+
 	})
 
 	r.Run("0.0.0.0:8080")
