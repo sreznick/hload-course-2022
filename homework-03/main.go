@@ -3,24 +3,22 @@ package main
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/segmentio/kafka-go"
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 )
-
-const SQL_DRIVER = "postgres"
-
-//const SQL_CONNECT_URL = "postgres://postgres:postgrespw@localhost:49153/postgres?sslmode=disable"
-
-const SQL_CONNECT_URL = "postgres://postgres:@localhost:22/postgres?sslmode=disable"
 
 func setupRouter() *gin.Engine {
 	r := gin.Default()
@@ -41,25 +39,123 @@ type create struct {
 
 var links = []create{}
 
+var sshcon SSH
+
+type ViaSSHDialer struct {
+	client *ssh.Client
+}
+
+func (self *ViaSSHDialer) Open(s string) (_ driver.Conn, err error) {
+	return pq.DialOpen(self, s)
+}
+
+func (self *ViaSSHDialer) Dial(network, address string) (net.Conn, error) {
+	return self.client.Dial(network, address)
+}
+
+func (self *ViaSSHDialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
+	return self.client.Dial(network, address)
+}
+
+func Read(topic string) {
+	var res = true
+	for res {
+		reader := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:   []string{"158.160.19.212:9092"},
+			Topic:     topic,
+			Partition: 0})
+		reader.SetOffset(kafka.LastOffset)
+
+		m, errorerr := reader.ReadMessage(context.Background())
+		if errorerr != nil {
+			fmt.Println("2")
+		}
+		fmt.Printf("message: %s = %s\n", string(m.Key), string(m.Value))
+		if errorerr := reader.Close(); errorerr != nil {
+			log.Fatal("failed to close reader:", errorerr)
+		}
+	}
+}
+
+func Writer(linkBigFromUser, shortLinkForDB, topic string) {
+	writer := &kafka.Writer{
+		Addr:  kafka.TCP("158.160.19.212:9092"),
+		Topic: topic}
+
+	error1 := writer.WriteMessages(context.Background(),
+		kafka.Message{
+			Key:   []byte(linkBigFromUser),
+			Value: []byte(shortLinkForDB),
+		})
+	if error1 != nil {
+		log.Fatal("failed to write messages:1:", error1)
+	}
+	if error1 := writer.Close(); error1 != nil {
+		log.Fatal("failed to close writer:", error1)
+	}
+}
+
+func WriterToMaster(shortLinkForDB, topic string) {
+	writer := &kafka.Writer{
+		Addr:  kafka.TCP("158.160.19.212:9092"),
+		Topic: topic}
+
+	error1 := writer.WriteMessages(context.Background(),
+		kafka.Message{
+			Key:   []byte(shortLinkForDB),
+			Value: []byte(shortLinkForDB),
+		})
+	if error1 != nil {
+		log.Fatal("failed to write messages:1:", error1)
+	}
+	if error1 := writer.Close(); error1 != nil {
+		log.Fatal("failed to close writer:", error1)
+	}
+}
+
+func MakeTinyUrl(conn *sqlx.DB, linkBigFromUser string, err error) (bool, string) {
+	var nameOfSearchingLinkInDB string
+	var result bool
+	var resultLink string
+	err = conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB) //check is link in the db
+	if err != nil {                                                                                                   //if db does not have a link
+		result = true
+		rand.Seed(time.Now().UnixNano())
+		charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+			"abcdefghijklmnopqrstuvwxyz" +
+			"0123456789")
+		var buildTinyUrl strings.Builder
+		for i := 0; i < 7; i++ {
+			buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
+		} //build random tinyurl
+		shortLinkForDB := buildTinyUrl.String()
+		resultLink = shortLinkForDB
+		stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
+		if err != nil {
+			log.Fatal(err)
+		}
+		res, err := stmt.Exec(linkBigFromUser, shortLinkForDB)
+		if err != nil {
+			log.Fatal(err)
+		}
+		res = res
+		defer stmt.Close()
+
+	} else { //if db has a link
+		result = false
+		err = conn.QueryRow("SELECT tinyurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
+		if err != nil {
+			fmt.Println(err)
+		}
+		resultLink = nameOfSearchingLinkInDB
+	}
+
+	return result, resultLink
+}
+
 func main() {
 
-	//writer := &kafka.Writer{
-	//	Addr:  kafka.TCP("158.160.19.212:9092"),
-	//	Topic: "mdiagilev-test"}
-
-	//reader := kafka.NewReader(kafka.ReaderConfig{
-	//	Brokers:   []string{"158.160.19.212:9092"},
-	//	Topic:     "mdiagilev-test",
-	//	Partition: 0})
-	//reader.SetOffset(kafka.LastOffset)
-
-	fmt.Println(sql.Drivers())
-	//b, err := ioutil.ReadFile("pass.conf")
-	//if err != nil {
-	//	panic(err)
-	//}
-
-	key, err := ioutil.ReadFile("//users//bogdan//.ssh//id_ed25519")
+	key, err := ioutil.ReadFile("//users//sergeidiagilev//.ssh//id_ed25519")
 	if err != nil {
 		panic(err)
 	}
@@ -86,7 +182,10 @@ func main() {
 	}
 
 	defer server.Close()
-	conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
+
+	sql.Register("postgres+ssh", &ViaSSHDialer{server.client})
+
+	conn, err := sqlx.Open("postgres+ssh", "user=postgres dbname=mdiagilev sslmode=disable")
 	if err != nil {
 		fmt.Println("Failed to open", err)
 		panic("exit")
@@ -97,8 +196,11 @@ func main() {
 		fmt.Println("Failed to ping database", err)
 		panic("exit")
 	}
-
 	r := setupRouter()
+
+	go Read("mdiagilev-test")
+	//consumer master
+	go Read("mdiagilev-test-master")
 
 	r.PUT("/create", func(c *gin.Context) { //User make put request
 		var usersJSONLongUrl create //make new struct
@@ -106,128 +208,28 @@ func main() {
 			fmt.Println("Failed", err)
 			panic("exit")
 		}
-		links = append(links, usersJSONLongUrl) //add to massive of slices
 		linkBigFromUser := usersJSONLongUrl.LONGURL
-		links = nil //delete last slice
-		fmt.Println(links)
-		var nameOfSearchingLinkInDB string
-		err = conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB) //check is link in the db
-		if err != nil {                                                                                                   //if db does not have a link
-			rand.Seed(time.Now().UnixNano())
-			charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-				"abcdefghijklmnopqrstuvwxyz" +
-				"0123456789")
-			var buildTinyUrl strings.Builder
-			for i := 0; i < 7; i++ {
-				buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
-			} //build random tinyurl
-			shortLinkForDB := buildTinyUrl.String()
-			stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
-			if err != nil {
-				log.Fatal(err)
-			}
-			res, err := stmt.Exec(linkBigFromUser, shortLinkForDB)
-			if err != nil {
-				log.Fatal(err)
-			}
-			res = res
-			defer stmt.Close()
-			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": shortLinkForDB})
+		var result bool
+		var resultLink string
+		result, resultLink = MakeTinyUrl(conn, linkBigFromUser, err)
 
-			//produce
-			//go func() {
-			writer := &kafka.Writer{
-				Addr:  kafka.TCP("158.160.19.212:9092"),
-				Topic: "mdiagilev-test"}
-
-			error1 := writer.WriteMessages(context.Background(),
-				kafka.Message{
-					Key:   []byte(linkBigFromUser),
-					Value: []byte(shortLinkForDB),
-				})
-			if error1 != nil {
-				log.Fatal("failed to write messages:1:", error1)
-			}
-			if error1 := writer.Close(); error1 != nil {
-				log.Fatal("failed to close writer:", error1)
-			}
-
-			//consume
-			go func() {
-				reader := kafka.NewReader(kafka.ReaderConfig{
-					Brokers:   []string{"158.160.19.212:9092"},
-					Topic:     "mdiagilev-test",
-					Partition: 0})
-				reader.SetOffset(kafka.LastOffset)
-
-				m, errorerrr := reader.ReadMessage(context.Background())
-				if errorerrr != nil {
-					fmt.Println("1")
-				}
-				fmt.Printf("message: %s = %s\n", string(m.Key), string(m.Value))
-				if errorerrr := reader.Close(); errorerrr != nil {
-					log.Fatal("failed to close reader:", errorerrr)
-				}
-			}()
+		//check is link in the db
+		if result == true { //if db does not have a link
+			go Writer(linkBigFromUser, resultLink, "mdiagilev-test")
+			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": resultLink})
 		} else { //if db has a link
-			err = conn.QueryRow("SELECT tinyurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
-			if err != nil {
-				fmt.Println(err)
-			}
 
-			// produce
-			writer := &kafka.Writer{
-				Addr:  kafka.TCP("158.160.19.212:9092"),
-				Topic: "mdiagilev-test"}
-			error2 := writer.WriteMessages(context.Background(),
-				kafka.Message{
-					Key:   []byte(linkBigFromUser),
-					Value: []byte(nameOfSearchingLinkInDB),
-				},
-			)
-
-			if error2 != nil {
-				log.Fatal("failed to write messages:", error2)
-			}
-
-			if error2 := writer.Close(); error2 != nil {
-				log.Fatal("failed to close writer:", error2)
-			}
-
-			//consume
-			go func() {
-				reader := kafka.NewReader(kafka.ReaderConfig{
-					Brokers:   []string{"158.160.19.212:9092"},
-					Topic:     "mdiagilev-test",
-					Partition: 0})
-				reader.SetOffset(kafka.LastOffset)
-
-				m, errorerr := reader.ReadMessage(context.Background())
-				if errorerr != nil {
-					fmt.Println("2")
-				}
-				fmt.Printf("message: %s = %s\n", string(m.Key), string(m.Value))
-				if errorerr := reader.Close(); errorerr != nil {
-					log.Fatal("failed to close reader:", errorerr)
-				}
-			}()
-
-			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": nameOfSearchingLinkInDB})
+			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": resultLink})
 		}
-
+		//	redis
 	})
 
+	//go Writer(linkBigFromUser, resultLink, "mdiagilev-test")
+
 	r.GET("/:tiny", func(c *gin.Context) { //User make get request
+		//redis
 		tiny := c.Params.ByName("tiny")
-		var longurl string
-		err = conn.QueryRow("SELECT longurl FROM links WHERE tinyurl =$1;", tiny).Scan(&longurl) //find longurl by tiny
-		if err != nil {
-			c.String(http.StatusNotFound, "404 page not found") //if link is out of db
-		} else {
-			fmt.Println(longurl)
-			//c.Redirect(http.StatusFound, longurl) //redirect to page
-			//c.Abort()
-		}
+		go WriterToMaster(tiny, "mdiagilev-test-master")
 	})
 
 	r.Run("0.0.0.0:8080")
