@@ -15,6 +15,7 @@ import (
 	"io/ioutil"
 	"log"
 	main2 "main/master/src"
+	"main/worker/src"
 	"math/rand"
 	"net"
 	"net/http"
@@ -128,7 +129,7 @@ func MasterSendToTopic(longLink, shortLink, topicToReplica string) {
 
 }
 
-func ReplicaReadResponseOnHerRequest(redis Redis, ctx context.Context, topic string) {
+func ReplicaReadResponseOnHerRequest(redis src.Redis, ctx context.Context, topic string) {
 
 	for {
 		reader := kafka.NewReader(kafka.ReaderConfig{
@@ -317,14 +318,14 @@ func main() {
 
 	//go ReplicaReadResponseOnHerRequest("mdiagilev-test")
 
-	var redis Redis
+	var redis src.Redis
 	var ctx context.Context
 	go ReplicaReadResponseOnHerRequest(redis, ctx, "mdiagilev-test")
 
 	r.GET("/:tiny", func(c *gin.Context) { //User make get request
 		tiny := c.Params.ByName("tiny")
 
-		redis := Redis{Cluster: getHost()}
+		redis := src.Redis{Cluster: getHost()}
 		err = redis.Connect()
 		if err != nil {
 			panic(err)
