@@ -1,0 +1,13 @@
+1) Kafka topic %username%-tinurls, which master uses to push messages on new tinyurl creation,
+   is configured to have exactly 1 partition (replication-factor is set to 1 too). Each of the workers
+   has it's own Consumer Group ID. That's because it's required for all the workers to read every message pushed
+   by master so they can replicate their redis instances data.
+
+   Workers are implemented in such a way that at-least-once message delivery guarantee is satisfied: every
+   consumer sends ACK (i.e. commits) only after it writes data to its redis instance. At-least-once strategy
+   is OK because, in fact, processing of message by worker is idemponent.
+
+2) Kafka topic %username%-clicks, which workers use to push messages on tinyurl visit, is configured
+   in the same way. Master implements consumer with at-least-once guarantee too because I assume it'd better
+   to persist 100 phantom clicks rather than miss them. This is not as good as exactly-once,
+   but it's OK if there are 2000 clicks stored when in fact there were only 1900.
