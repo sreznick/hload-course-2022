@@ -1,7 +1,6 @@
-package main
+package master
 
 import (
-	"errors"
 	"fmt"
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
@@ -22,7 +21,7 @@ type SSH struct {
 	Signer    ssh.Signer
 	PublicKey ssh.PublicKey
 	session   *ssh.Session
-	client    *ssh.Client
+	Client    *ssh.Client
 }
 
 func (sshClient *SSH) readPublicKeyFile(file string) ssh.AuthMethod {
@@ -35,21 +34,20 @@ func (sshClient *SSH) readPublicKeyFile(file string) ssh.AuthMethod {
 	if err != nil {
 		return nil
 	}
+
 	return ssh.PublicKeys(key)
 }
 
 func (sshClient *SSH) Connect(mode int) error {
-
 	var ssh_config *ssh.ClientConfig
 	var auth []ssh.AuthMethod
-	if mode == CERT_PASSWORD {
+	switch mode {
+	case CERT_PASSWORD:
 		auth = []ssh.AuthMethod{ssh.Password(sshClient.Cert)}
-	} else if mode == CERT_PUBLIC_KEY_FILE {
-		auth = []ssh.AuthMethod{
-			ssh.PublicKeys(sshClient.Signer),
-		}
-	} else {
-		return errors.New("Does not support mode")
+	case CERT_PUBLIC_KEY_FILE:
+		auth = []ssh.AuthMethod{ssh.PublicKeys(sshClient.Signer)}
+	default:
+		return fmt.Errorf("does not support mode")
 	}
 
 	ssh_config = &ssh.ClientConfig{
@@ -71,7 +69,7 @@ func (sshClient *SSH) Connect(mode int) error {
 	}
 
 	sshClient.session = session
-	sshClient.client = client
+	sshClient.Client = client
 
 	return nil
 }
@@ -81,10 +79,11 @@ func (sshClient *SSH) RunCmd(cmd string) {
 	if err != nil {
 		fmt.Println(err)
 	}
+
 	fmt.Println(string(out))
 }
 
 func (sshClient *SSH) Close() {
 	sshClient.session.Close()
-	sshClient.client.Close()
+	sshClient.Client.Close()
 }

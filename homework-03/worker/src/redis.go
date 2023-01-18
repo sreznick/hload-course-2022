@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	_ "github.com/go-redis/redis/v8"
 )
@@ -10,8 +11,9 @@ const (
 )
 
 type Redis struct {
+	*redis.Client
+
 	Cluster string
-	Client  *redis.Client
 	Name    string
 }
 
@@ -23,16 +25,10 @@ func (client *Redis) Connect() error {
 	})
 
 	_, err := redisClient.Ping(redisClient.Context()).Result()
-
 	if err != nil {
-		return err
+		return fmt.Errorf("redisClient.Ping: %w", err)
 	}
 
 	client.Client = redisClient
 	return nil
-
-}
-
-func (client *Redis) Close() {
-	client.Client.Close()
 }

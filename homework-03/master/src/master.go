@@ -1,8 +1,7 @@
-package main
+package master
 
 import (
 	"context"
-	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"github.com/gin-gonic/gin"
@@ -12,7 +11,6 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/segmentio/kafka-go"
 	"golang.org/x/crypto/ssh"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net"
@@ -21,7 +19,7 @@ import (
 	"time"
 )
 
-func setupRouter() *gin.Engine {
+func SetupRouter() *gin.Engine {
 	r := gin.Default()
 
 	r.GET("/ping", func(c *gin.Context) {
@@ -35,15 +33,11 @@ func setupRouter() *gin.Engine {
 
 // struct for user json request
 type create struct {
-	LONGURL string `json:"longurl"`
+	LongUrl string `json:"longurl"`
 }
 
-var links = []create{}
-
-var sshcon SSH
-
 type ViaSSHDialer struct {
-	client *ssh.Client
+	Client *ssh.Client
 }
 
 func (self *ViaSSHDialer) Open(s string) (_ driver.Conn, err error) {
@@ -51,47 +45,53 @@ func (self *ViaSSHDialer) Open(s string) (_ driver.Conn, err error) {
 }
 
 func (self *ViaSSHDialer) Dial(network, address string) (net.Conn, error) {
-	return self.client.Dial(network, address)
+	return self.Client.Dial(network, address)
 }
 
 func (self *ViaSSHDialer) DialTimeout(network, address string, timeout time.Duration) (net.Conn, error) {
-	return self.client.Dial(network, address)
+	return self.Client.Dial(network, address)
 }
 
-func MasterSendNewDataToReplicas(longLink, shortLink, topicToReplica string) {
+func sendNewDataToReplicas(longLink, shortLink, topicToReplica string) error {
 	writer := &kafka.Writer{
 		Addr:  kafka.TCP("158.160.19.212:9092"),
-		Topic: topicToReplica}
-
-	error1 := writer.WriteMessages(context.Background(),
+		Topic: topicToReplica,
+	}
+	err := writer.WriteMessages(context.Background(),
 		kafka.Message{
 			Key:   []byte(shortLink), //longurl from db
 			Value: []byte(longLink),  //tinyurl from replica
 		})
-	if error1 != nil {
-		log.Fatal("failed to write messages:1:", error1)
-	}
-	if error1 := writer.Close(); error1 != nil {
-		log.Fatal("failed to close writer:", error1)
+	if err != nil {
+		return fmt.Errorf("failed to write messages: %w", err)
 	}
 
+	if err = writer.Close(); err != nil {
+		return fmt.Errorf("failed to close writer: %w", err)
+	}
+
+	return nil
 }
 
-func MakeTinyUrl(conn *sqlx.DB, linkBigFromUser string, err error) (result bool, resultLink string) {
+func checkAndCreateTinyUrl(conn *sqlx.DB, linkBigFromUser string) (bool, string, error) {
 	var nameOfSearchingLinkInDB string
-	err = conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB) //check is link in the db
-	if err == nil {
-		//if db has a link
-		result = false
-		err = conn.QueryRow("SELECT tinyurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
-		if err != nil {
-			fmt.Println(err)
-		}
-		resultLink = nameOfSearchingLinkInDB
-		return
-	} //if db does not have a link
+	// проверяем есть ли ссылка в бд
+	err := conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
+	if err != nil {
+		// если ссылки нет в бд
+		return createTinyUrl(conn, linkBigFromUser)
+	}
 
-	result = true
+	//если ссылки есть в бд
+	err = conn.QueryRow("SELECT tinyurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
+	if err != nil {
+		return false, "", fmt.Errorf("query select tinyurl from links: %w", err)
+	}
+
+	return false, nameOfSearchingLinkInDB, nil
+}
+
+func createTinyUrl(conn *sqlx.DB, linkBigFromUser string) (bool, string, error) {
 	rand.Seed(time.Now().UnixNano())
 	charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
 		"abcdefghijklmnopqrstuvwxyz" +
@@ -99,85 +99,83 @@ func MakeTinyUrl(conn *sqlx.DB, linkBigFromUser string, err error) (result bool,
 	var buildTinyUrl strings.Builder
 	for i := 0; i < 7; i++ {
 		buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
-	} //build random tinyurl
+	} // делаем tinyUrl
+
 	shortLinkForDB := buildTinyUrl.String()
-	resultLink = shortLinkForDB
-	stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
+	stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl, count_click_on_link) VALUES ($1, $2, $3);") //помещяем ссылку в бд
 	if err != nil {
-		log.Fatal(err)
+		return false, "", fmt.Errorf("conn.Prepare insert tinyurl: %w", err)
 	}
-	_, err = stmt.Exec(linkBigFromUser, shortLinkForDB)
-	if err != nil {
-		log.Fatal(err)
+	defer stmt.Close()
+
+	if _, err = stmt.Exec(linkBigFromUser, shortLinkForDB, 0); err != nil {
+		return false, "", fmt.Errorf("stmt.Exec insert tinyurl: %w", err)
 	}
 
-	defer stmt.Close()
-	return
+	return true, shortLinkForDB, nil
 }
 
-func main() {
+func Put(ctx *gin.Context, conn *sqlx.DB) error {
+	var (
+		usersJSONLongUrl create //make new struct
+	)
+	if err := ctx.BindJSON(&usersJSONLongUrl); err != nil {
+		return fmt.Errorf(" ctx.BindJSON: %v", err)
+	}
 
-	key, err := ioutil.ReadFile("//users//sergeidiagilev//.ssh//id_ed25519")
+	result, resultLink, err := checkAndCreateTinyUrl(conn, usersJSONLongUrl.LongUrl)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("checkAndCreateTinyUrl: %w", err)
 	}
 
-	signer, err := ssh.ParsePrivateKey(key)
+	if !result {
+		ctx.JSON(http.StatusOK, gin.H{"longurl": usersJSONLongUrl.LongUrl, "tinyurl": resultLink}) // если в бд есть ссылка
+		return nil
+	}
+
+	// если в бд нет ссылка
+	err = sendNewDataToReplicas(usersJSONLongUrl.LongUrl, resultLink, "mdiagilev-test-master")
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("sendNewDataToReplicas: %w", err)
 	}
+	ctx.JSON(http.StatusOK, gin.H{"longurl": usersJSONLongUrl.LongUrl, "tinyurl": resultLink})
 
-	pass := "postgres"
+	return nil
+}
 
-	server := &SSH{
-		Ip:     "51.250.106.140",
-		User:   "mdiagilev",
-		Port:   22,
-		Cert:   pass,
-		Signer: signer,
-	}
+func MasterReadFromReplicaIncrClick(conn *sqlx.DB, topic string) {
+	for {
+		reader := kafka.NewReader(kafka.ReaderConfig{
+			Brokers:   []string{"158.160.19.212:9092"},
+			Topic:     topic,
+			Partition: 0})
+		reader.SetOffset(kafka.LastOffset)
 
-	err = server.Connect(CERT_PUBLIC_KEY_FILE)
-	if err != nil {
-		panic(err)
-	}
-
-	defer server.Close()
-
-	sql.Register("postgres+ssh", &ViaSSHDialer{server.client})
-
-	conn, err := sqlx.Open("postgres+ssh", "user=postgres dbname=mdiagilev sslmode=disable")
-	if err != nil {
-		fmt.Println("Failed to open", err)
-		panic("exit")
-	}
-
-	err = conn.Ping()
-	if err != nil {
-		fmt.Println("Failed to ping database", err)
-		panic("exit")
-	}
-
-	r := setupRouter()
-
-	r.PUT("/create", func(c *gin.Context) { //User make put request
-		var usersJSONLongUrl create //make new struct
-		if err := c.BindJSON(&usersJSONLongUrl); err != nil {
-			fmt.Println("Failed", err)
-			panic("exit")
+		m, err := reader.ReadMessage(context.Background())
+		if err != nil {
+			fmt.Println("", err)
 		}
-		linkBigFromUser := usersJSONLongUrl.LONGURL
-		var result bool
-		var resultLink string
-		result, resultLink = MakeTinyUrl(conn, linkBigFromUser, err)
 
-		if result == true { //if db does not have a link
-			MasterSendNewDataToReplicas(linkBigFromUser, resultLink, "mdiagilev-test-master")
-			//go ReplicaReadNewDataFromMaster("mdiagilev-test-master")
-			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": resultLink})
-		} else { //if db has a link
-			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": resultLink})
+		fmt.Printf("message with links from Master to replica: %s = %s\n", string(m.Key), string(m.Value)) //longurl, click
+		// UPDATE totals
+		//   SET total = total + 1
+		//WHERE name = 'bill';
+		//stmt, err := conn.Prepare("UPDATE links SET count_click_on_link = count_click_on_link + $1 WHERE longurl = $2 VALUES ($1, $2);", m.Value) //помещяем ссылку в бд
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
+		//
+		//_, err = stmt.Exec((m.Value), m.Key)
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
+		//
+		//defer stmt.Close()
+
+		if err := reader.Close(); err != nil {
+			log.Fatal("failed to close reader:", err)
 		}
-	})
-	r.Run("0.0.0.0:8080")
+
+	}
+
 }

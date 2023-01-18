@@ -1,22 +1,74 @@
-package main
+package worker
 
 import (
 	"context"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/segmentio/kafka-go"
-	"io/ioutil"
 	"log"
-	"main/worker"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
-func setupRouter() *gin.Engine {
-	r := gin.Default()
+func randomNumber() int64 {
+	rand.Seed(time.Now().UnixNano())
+	return rand.Int63n(2)
+}
 
+func Get(ctx *gin.Context) error {
+	var (
+		click int64
+		tiny  = ctx.Params.ByName("tiny")
+	)
+	hosts, err := getHosts()
+	if err != nil {
+		return fmt.Errorf("get.getHosts: %w", err)
+	}
+
+	redis := Redis{
+		Cluster: hosts[randomNumber()],
+	}
+	if err = redis.Connect(); err != nil {
+		log.Fatalf("redis.Connect: %v", err)
+	}
+	defer redis.Close()
+
+	valueOfLongUrl, err := redis.HGetAll(ctx, "mdyagilev:main").Result()
+	if err != nil {
+		return fmt.Errorf("redis.HGetAll: %w", err)
+	}
+
+	val, ok := valueOfLongUrl[tiny]
+	if !ok {
+		ctx.Writer.WriteHeader(http.StatusNotFound) // если в redis реплике нет ссылка
+		return nil
+	}
+
+	ctx.Redirect(http.StatusFound, val)                                  // если в redis реплике есть ссылка
+	click, err = redis.HIncrBy(ctx, "mdyagilev:clicks", val, 1).Result() //  Incr(ctx, val).Result()
+	if err != nil {
+		return fmt.Errorf("redis.HIncrBy: %w", err)
+	}
+
+	if click == 10 { //100
+		if err = replicaSendToMasterClickOnURL(
+			ctx,
+			val,
+			"mdiagilev-test",
+			fmt.Sprintf("%v", click),
+		); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func SetupRouter() *gin.Engine {
+	r := gin.Default()
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"message": "pong",
@@ -26,83 +78,85 @@ func setupRouter() *gin.Engine {
 	return r
 }
 
-func ReplicaReadNewDataFromMaster(topic string) {
-	for {
-		reader := kafka.NewReader(kafka.ReaderConfig{
-			Brokers:   []string{"158.160.19.212:9092"},
-			Topic:     topic,
-			Partition: 0})
-		reader.SetOffset(kafka.LastOffset)
-
-		m, err := reader.ReadMessage(context.Background())
-		if err != nil {
-			fmt.Println("2")
-		}
-		//записываем
-		fmt.Printf("message with links from Master to replica: %s = %s\n", string(m.Key), string(m.Value))
-		for i := 0; i < len(getHost()); i++ {
-
-			redis := worker.Redis{Cluster: getHost()[i]}
-			err = redis.Connect()
-			if err != nil {
-				panic(err)
-			}
-			defer redis.Close()
-			ctx := context.Background()
-			redis.Connect()
-			error := redis.Client.HSet(ctx, "mdyagilev:main", string(m.Key), string(m.Value))
-			if error != nil {
-				fmt.Println("value not record")
-			}
-		}
-		if err := reader.Close(); err != nil {
-			log.Fatal("failed to close reader:", err)
-		}
-	}
-
-}
-
-func getHost() []string {
-	data, err := ioutil.ReadFile("ssh_hosts")
+func ReplicaReadNewDataFromMaster(ctx context.Context, topic string) {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"158.160.19.212:9092"},
+		Topic:     topic,
+		Partition: 0})
+	err := reader.SetOffset(kafka.LastOffset)
 	if err != nil {
-		fmt.Println(err)
+		log.Fatalf("reader.SetOffset: %v", err)
 	}
-	sshHosts := string(data)
-	return strings.Split(sshHosts, " ")
+	defer reader.Close()
 
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("contex done")
+		default:
+			if err = readNewDataFromMaster(ctx, reader); err != nil {
+				log.Fatalf("readNewDataFromMaster: %v", err)
+			}
+		}
+	}
 }
 
-func main() {
-	r := setupRouter()
+func readNewDataFromMaster(ctx context.Context, reader *kafka.Reader) error {
+	message, err := reader.ReadMessage(ctx)
+	if err != nil {
+		return fmt.Errorf("reader.ReadMessage: %w", err)
+	}
 
-	r.GET("/:tiny", func(c *gin.Context) { //User make get request
-		tiny := c.Params.ByName("tiny")
-
-		rand.Seed(time.Now().UnixNano())
-		var randomNumber = rand.Int63n(2)
-
-		redis := worker.Redis{Cluster: getHost()[randomNumber]}
-		err := redis.Connect()
-		if err != nil {
-			panic(err)
+	var hosts []string
+	hosts, err = getHosts()
+	for _, host := range hosts {
+		redis := Redis{Cluster: host}
+		if err = redis.Connect(); err != nil {
+			return err
 		}
 		defer redis.Close()
 
-		ctx := context.Background()
-		valueOfLongUrl, err := redis.Client.HGetAll(ctx, "mdyagilev:main").Result()
-		if err != nil {
-			fmt.Println("", err)
+		init := redis.HSet(ctx, "mdyagilev:main", string(message.Key), string(message.Value))
+		if init != nil {
+			log.Printf("value not record")
 		}
 
-		val, ok := valueOfLongUrl[tiny]
-		if ok == false {
-			c.Writer.WriteHeader(http.StatusNotFound)
-		} else {
-			c.Redirect(http.StatusFound, val) // если ссылка есть в redis
+		init = redis.HSet(ctx, "mdyagilev:clicks", string(message.Value), 0)
+		if init != nil {
+			log.Printf("value not record")
 		}
+
+	}
+
+	return nil
+}
+
+func replicaSendToMasterClickOnURL(ctx context.Context, longLink, topicToReplica, clickNumber string) error {
+	writer := &kafka.Writer{
+		Addr:  kafka.TCP("158.160.19.212:9092"),
+		Topic: topicToReplica,
+	}
+
+	err := writer.WriteMessages(ctx, kafka.Message{
+		Key:   []byte(longLink),    //longurl from db
+		Value: []byte(clickNumber), //tinyurl from replica
 	})
+	if err != nil {
+		return fmt.Errorf("failed to write messages: %w", err)
+	}
 
-	go ReplicaReadNewDataFromMaster("mdiagilev-test-master")
+	if err = writer.Close(); err != nil {
+		return fmt.Errorf("failed to close writer: %w", err)
+	}
 
-	r.Run("0.0.0.0:8081")
+	return nil
+}
+
+func getHosts() ([]string, error) {
+	data, err := os.ReadFile("ssh_hosts")
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(string(data), " "), nil
 }
