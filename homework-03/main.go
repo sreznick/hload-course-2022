@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"io/ioutil"
 	"log"
+	main2 "main/master/src"
 	"math/rand"
 	"net"
 	"net/http"
@@ -40,7 +41,7 @@ type create struct {
 
 var links = []create{}
 
-var sshcon SSH
+var sshcon main2.SSH
 
 type ViaSSHDialer struct {
 	client *ssh.Client
@@ -127,22 +128,29 @@ func MasterSendToTopic(longLink, shortLink, topicToReplica string) {
 
 }
 
-func ReplicaReadResponseOnHerRequest(topic string) {
-	var res = true
-	for res {
+func ReplicaReadResponseOnHerRequest(redis Redis, ctx context.Context, topic string) {
+
+	for {
 		reader := kafka.NewReader(kafka.ReaderConfig{
 			Brokers:   []string{"158.160.19.212:9092"},
 			Topic:     topic,
 			Partition: 0})
 		reader.SetOffset(kafka.LastOffset)
-		m, errorerr := reader.ReadMessage(context.Background())
-		if errorerr != nil {
+		m, err := reader.ReadMessage(context.Background())
+		if err != nil {
 			fmt.Println("2")
 		}
 		//записываем в рэдис, переменную под рэдис сделать
 		fmt.Printf("message with links from Master to replica: %s = %s\n", string(m.Key), string(m.Value))
-		if errorerr := reader.Close(); errorerr != nil {
-			log.Fatal("failed to close reader:", errorerr)
+
+		redis.Connect()
+		error := redis.Client.HSet(ctx, "mdyagilev:main", string(m.Key), string(m.Value))
+		if error != nil {
+			fmt.Println("value not record")
+		}
+
+		if err := reader.Close(); err != nil {
+			log.Fatal("failed to close reader:", err)
 		}
 	}
 }
@@ -183,44 +191,58 @@ func WriterToMaster(shortLinkForDB, topic string) {
 	}
 }
 
-func MakeTinyUrl(conn *sqlx.DB, linkBigFromUser string, err error) (bool, string) {
+func MakeTinyUrl(conn *sqlx.DB, linkBigFromUser string, err error) (result bool, resultLink string) {
 	var nameOfSearchingLinkInDB string
-	var result bool
-	var resultLink string
 	err = conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB) //check is link in the db
-	if err != nil {                                                                                                   //if db does not have a link
-		result = true
-		rand.Seed(time.Now().UnixNano())
-		charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-			"abcdefghijklmnopqrstuvwxyz" +
-			"0123456789")
-		var buildTinyUrl strings.Builder
-		for i := 0; i < 7; i++ {
-			buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
-		} //build random tinyurl
-		shortLinkForDB := buildTinyUrl.String()
-		resultLink = shortLinkForDB
-		stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
-		if err != nil {
-			log.Fatal(err)
-		}
-		res, err := stmt.Exec(linkBigFromUser, shortLinkForDB)
-		if err != nil {
-			log.Fatal(err)
-		}
-		res = res
-		defer stmt.Close()
-
-	} else { //if db has a link
+	if err == nil {
+		//if db has a link
 		result = false
 		err = conn.QueryRow("SELECT tinyurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
 		if err != nil {
 			fmt.Println(err)
 		}
 		resultLink = nameOfSearchingLinkInDB
+		return
+	} //if db does not have a link
+
+	result = true
+	rand.Seed(time.Now().UnixNano())
+	charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+		"abcdefghijklmnopqrstuvwxyz" +
+		"0123456789")
+	var buildTinyUrl strings.Builder
+	for i := 0; i < 7; i++ {
+		buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
+	} //build random tinyurl
+	shortLinkForDB := buildTinyUrl.String()
+	resultLink = shortLinkForDB
+	stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
+	if err != nil {
+		log.Fatal(err)
+	}
+	_, err = stmt.Exec(linkBigFromUser, shortLinkForDB)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	return result, resultLink
+	defer stmt.Close()
+	return
+}
+
+func getHost() string {
+	data, err := ioutil.ReadFile("ssh_hosts")
+	if err != nil {
+		fmt.Println(err)
+	}
+	dataString := string(data)
+	value := strings.Split(dataString, " ")
+	rand.Seed(time.Now().UnixNano())
+	var randomNumber = rand.Int63n(2)
+	if randomNumber == 0 {
+		return value[0]
+	} else {
+		return value[0] //1!!!!!!!
+	}
 }
 
 func main() {
@@ -237,7 +259,7 @@ func main() {
 
 	pass := "postgres"
 
-	server := &SSH{
+	server := &main2.SSH{
 		Ip:     "51.250.106.140",
 		User:   "mdiagilev",
 		Port:   22,
@@ -245,7 +267,7 @@ func main() {
 		Signer: signer,
 	}
 
-	err = server.Connect(CERT_PUBLIC_KEY_FILE)
+	err = server.Connect(main2.CERT_PUBLIC_KEY_FILE)
 	if err != nil {
 		panic(err)
 	}
@@ -293,52 +315,51 @@ func main() {
 	//go Writer(linkBigFromUser, resultLink, "mdiagilev-test")
 	//go Read("mdiagilev-test-master")
 
-	go ReplicaReadResponseOnHerRequest("mdiagilev-test")
+	//go ReplicaReadResponseOnHerRequest("mdiagilev-test")
 
-	redis := Redis{Cluster: "158.160.19.212:26379"}
-	err = redis.Connect()
-
-	if err != nil {
-		panic(err)
-	}
-
-	defer redis.Close()
+	var redis Redis
+	var ctx context.Context
+	go ReplicaReadResponseOnHerRequest(redis, ctx, "mdiagilev-test")
 
 	r.GET("/:tiny", func(c *gin.Context) { //User make get request
 		tiny := c.Params.ByName("tiny")
 
+		redis := Redis{Cluster: getHost()}
+		err = redis.Connect()
+		if err != nil {
+			panic(err)
+		}
+		defer redis.Close()
+
 		//прочитать все что есть в топике если мы умерли,
 		ctx := context.Background()
-		var a = redis.Client.LPop(ctx, string(tiny))
-		fmt.Println("__________")
-		fmt.Println(a)
-		//redis.Client.RPush(ctx, "1", "2")
-		//потом идем в рэдис
-		//ctx := context.Background()
-		//rdb := redis.NewClient(&redis.Options{
-		//	Addr:     "localhost:6379",
-		//	Password: "", // no password set
-		//	DB:       0,  // use default DB
-		//})
-		//
-		//al2, err := rdb.Get(ctx, "key2").Result()
-		//if err == redis.Nil {
-		//	fmt.Println("key2 does not exist")
-		//} else if err != nil {
-		//	panic(err)
-		//} else {
-		//	fmt.Println("key2", val2)
-		//}
+		valueOfLongUrl, err := redis.Client.HGetAll(ctx, "mdyagilev:main").Result()
+		if err != nil {
+			fmt.Println("", err)
+		}
+
+		val, ok := valueOfLongUrl[tiny]
+		if ok == false {
+			c.Writer.WriteHeader(http.StatusNotFound)
+			//если ссылки нет в redis
+			WriterToMaster(tiny, "mdiagilev-test-master")                                   //если в нем нет то пишем в топик мастера
+			var longUrl, shortUrl = MasterReadFromTopic(conn, err, "mdiagilev-test-master") // мастер прочитает с
+			// топика и пойдет в бд, заберет значение
+			MasterSendToTopic(longUrl, shortUrl, "mdiagilev-test") //затем отправит в топик мастер это значение
+			//go ReplicaReadResponseOnHerRequest(redis, ctx, "mdiagilev-test") //читает сообщения от мастера
+		} else {
+			c.Redirect(http.StatusFound, val) // если ссылка есть в redis
+		}
 
 		//____________________________________________________________________________________________________//
 		//если в нем нет то пишем в топик мастера
-		go WriterToMaster(tiny, "mdiagilev-test-master") // 3. request url
-		//мастер прочитает с топика мастера и пойдет в бд, заберет и вернет значение
-		var longurl string
-		var shorturl string
-		longurl, shorturl = MasterReadFromTopic(conn, err, "mdiagilev-test-master")
-		//затем отправит в топик мастер это значение
-		MasterSendToTopic(longurl, shorturl, "mdiagilev-test")
+		//go WriterToMaster(tiny, "mdiagilev-test-master") // 3. request url
+		////мастер прочитает с топика мастера и пойдет в бд, заберет и вернет значение
+		//var longurl string
+		//var shorturl string
+		//longurl, shorturl = MasterReadFromTopic(conn, err, "mdiagilev-test-master")
+		////затем отправит в топик мастер это значение
+		//MasterSendToTopic(longurl, shorturl, "mdiagilev-test")
 		//реплика прочитает топик и заберет последнее
 		//go ReplicaReadResponseOnHerRequest("mdiagilev-test")
 		//читает из топика дальше и пишет в рэдис
@@ -346,10 +367,9 @@ func main() {
 		//идем и делаем запрос в рэдис
 
 		//go Read("mdiagilev-test-master")
-
-		//consumer master
-
 	})
+
+	//go ReplicaReadResponseOnHerRequest(redis, ctx, "mdiagilev-test")
 
 	r.Run("0.0.0.0:8080")
 
