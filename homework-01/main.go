@@ -1,51 +1,51 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "net/http"
-
-    "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
+	"database/sql"
+	"fmt"
+	_ "github.com/lib/pq"
+	"main/server_backend"
 )
 
 const SQL_DRIVER = "postgres"
-const SQL_CONNECT_URL = "postgres://postgres:postgres@localhost"
 
-func setupRouter() *gin.Engine {
-	r := gin.Default()
-
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "pong")
-	})
-
-	r.GET("/user/:name", func(c *gin.Context) {
-		user := c.Params.ByName("name")
-		if user == "vasya" {
-			c.JSON(http.StatusOK, gin.H{"user": user, "value": "12345"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{"user": user, "status": "no value"})
-		}
-	})
-
-	return r
-}
+const (
+	host     = "localhost"
+	port     = 5432
+	user     = "postgres"
+	password = "jaja"
+	dbname   = "hload"
+)
 
 func main() {
-    fmt.Println(sql.Drivers())
-    conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
-    if err != nil {
-        fmt.Println("Failed to open", err)
-        panic("exit")
-    }
+	fmt.Println(sql.Drivers())
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
 
-    err = conn.Ping()
-    if err != nil {
-        fmt.Println("Failed to ping database", err)
-        panic("exit")
-    }
+	conn, err := sql.Open(SQL_DRIVER, psqlInfo)
+	if err != nil {
+		fmt.Println("Failed to open", err)
+		panic("exit")
+	}
 
+	err = conn.Ping()
+	if err != nil {
+		fmt.Println("Failed to ping database", err)
+		panic("exit")
+	}
 
-	r := setupRouter()
-	r.Run(":8080")
+	_, err = conn.Exec("create table if not exists urls(id bigint, url varchar unique)")
+	if err != nil {
+		fmt.Println("Failed to create table", err)
+		panic("exit")
+	}
+
+	pr := server_backend.SetupPrometheusRouter()
+	r := server_backend.SetupRouter(conn)
+	go pr.Run(":2112")
+	err = r.Run(":8080")
+	if err != nil {
+		panic("Something wrong with router: " + err.Error())
+	}
 }
