@@ -52,13 +52,13 @@ func (self *ViaSSHDialer) DialTimeout(network, address string, timeout time.Dura
 	return self.Client.Dial(network, address)
 }
 
-func sendNewDataToReplicas(longLink, shortLink, topicToReplica string) error {
+func sendNewDataToReplicas(ctx context.Context, longLink, shortLink, topicToReplica string) error {
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP("158.160.19.212:9092"),
 		RequiredAcks: 1,
 		Topic:        topicToReplica,
 	}
-	err := writer.WriteMessages(context.Background(),
+	err := writer.WriteMessages(ctx,
 		kafka.Message{
 			Key:   []byte(shortLink), //longurl from db
 			Value: []byte(longLink),  //tinyurl from replica
@@ -135,7 +135,7 @@ func Put(ctx *gin.Context, conn *sqlx.DB) error {
 	}
 
 	// если в бд нет ссылка
-	err = sendNewDataToReplicas(usersJSONLongUrl.LongUrl, resultLink, "mdiagilev-events-clicks")
+	err = sendNewDataToReplicas(ctx, usersJSONLongUrl.LongUrl, resultLink, "mdiagilev-events-clicks")
 	if err != nil {
 		return fmt.Errorf("sendNewDataToReplicas: %w", err)
 	}
@@ -144,36 +144,45 @@ func Put(ctx *gin.Context, conn *sqlx.DB) error {
 	return nil
 }
 
-func MasterReadFromReplicaIncrClick(conn *sqlx.DB, topic string) {
+func MasterReadFromReplicaIncrClick(ctx context.Context, conn *sqlx.DB, topic string) {
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers:   []string{"158.160.19.212:9092"},
+		Topic:     topic,
+		Partition: 0})
+	err := reader.SetOffset(kafka.LastOffset)
+	if err != nil {
+		log.Fatalf("reader.SetOffset: %v", err)
+	}
+	defer reader.Close()
+
 	for {
-		reader := kafka.NewReader(kafka.ReaderConfig{
-			Brokers:   []string{"158.160.19.212:9092"},
-			Topic:     topic,
-			Partition: 0})
-		reader.SetOffset(kafka.LastOffset)
-
-		m, err := reader.ReadMessage(context.Background())
-		if err != nil {
-			fmt.Println("", err)
+		select {
+		case <-ctx.Done():
+			log.Printf("contex done")
+		default:
+			if err = readFromReplicaIncrClick(ctx, reader, conn); err != nil {
+				log.Fatalf("readFromReplicaIncrClick: %v", err)
+			}
 		}
+	}
+}
 
-		fmt.Printf("message with links from Master to replica: %s = %s\n", string(m.Key), string(m.Value)) //longurl, click
-
-		stmt, err := conn.Prepare("UPDATE links SET count_click_on_link = count_click_on_link + 100 WHERE longurl = $1;") //помещяем ссылку в бд
-		if err != nil {
-			log.Printf("conn.Prepare update count click on link")
-		}
-		defer stmt.Close()
-
-		_, err = stmt.Exec(string(m.Key))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if err = reader.Close(); err != nil {
-			log.Printf("failed to close reader:")
-		}
-
+func readFromReplicaIncrClick(ctx context.Context, reader *kafka.Reader, conn *sqlx.DB) error {
+	m, err := reader.ReadMessage(ctx)
+	if err != nil {
+		return fmt.Errorf("reader.ReadMessage: %w", err)
 	}
 
+	stmt, err := conn.Prepare("UPDATE links SET count_click_on_link = count_click_on_link + 100 WHERE longurl = $1;") //помещяем ссылку в бд
+	if err != nil {
+		return fmt.Errorf("conn.Prepare update count click on link: %w", err)
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(string(m.Key))
+	if err != nil {
+		return fmt.Errorf("stmt.Exec: %w", err)
+	}
+
+	return nil
 }

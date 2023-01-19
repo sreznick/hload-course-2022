@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
@@ -11,6 +12,8 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
+
 	key, err := os.ReadFile("//users//sergeidiagilev//.ssh//id_ed25519")
 	if err != nil {
 		log.Fatalf("os.ReadFile: %v", err)
@@ -53,7 +56,7 @@ func main() {
 		}
 	})
 
-	go master.MasterReadFromReplicaIncrClick(conn, "mdiagilev-events-links")
+	go master.MasterReadFromReplicaIncrClick(ctx, conn, "mdiagilev-events-links")
 
 	r.Run("0.0.0.0:8080")
 }
