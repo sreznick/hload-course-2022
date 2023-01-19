@@ -53,7 +53,7 @@ func main() {
 		}
 	})
 
-	go master.MasterReadFromReplicaIncrClick(conn, "mdiagilev-test")
+	go master.MasterReadFromReplicaIncrClick(conn, "mdiagilev-events-links")
 
 	r.Run("0.0.0.0:8080")
 }

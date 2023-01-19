@@ -12,7 +12,7 @@ func main() {
 		r   = worker.SetupRouter()
 		ctx = context.Background()
 	)
-	go worker.ReplicaReadNewDataFromMaster(ctx, "mdiagilev-test-master")
+	go worker.ReplicaReadNewDataFromMaster(ctx, "mdiagilev-events-clicks")
 
 	r.GET("/:tiny", func(ctx *gin.Context) {
 		if err := worker.Get(ctx); err != nil {

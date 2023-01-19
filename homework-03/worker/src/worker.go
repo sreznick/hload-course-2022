@@ -36,7 +36,7 @@ func Get(ctx *gin.Context) error {
 	}
 	defer redis.Close()
 
-	valueOfLongUrl, err := redis.HGetAll(ctx, "mdyagilev:main").Result()
+	valueOfLongUrl, err := redis.HGetAll(ctx, "mdyagilev:events").Result()
 	if err != nil {
 		return fmt.Errorf("redis.HGetAll: %w", err)
 	}
@@ -47,17 +47,17 @@ func Get(ctx *gin.Context) error {
 		return nil
 	}
 
-	ctx.Redirect(http.StatusFound, val)                                  // если в redis реплике есть ссылка
-	click, err = redis.HIncrBy(ctx, "mdyagilev:clicks", val, 1).Result() //  Incr(ctx, val).Result()
+	ctx.Redirect(http.StatusFound, val)                                        // если в redis реплике есть ссылка
+	click, err = redis.HIncrBy(ctx, "mdyagilev:eventsClicks", val, 1).Result() //  Incr(ctx, val).Result()
 	if err != nil {
 		return fmt.Errorf("redis.HIncrBy: %w", err)
 	}
 
-	if click == 10 { //100
+	if click == 100 {
 		if err = replicaSendToMasterClickOnURL(
 			ctx,
 			val,
-			"mdiagilev-test",
+			"mdiagilev-events-links",
 			fmt.Sprintf("%v", click),
 		); err != nil {
 			return err
@@ -83,7 +83,7 @@ func ReplicaReadNewDataFromMaster(ctx context.Context, topic string) {
 		Brokers:   []string{"158.160.19.212:9092"},
 		Topic:     topic,
 		Partition: 0})
-	err := reader.SetOffset(kafka.LastOffset)
+	err := reader.SetOffset(kafka.FirstOffset)
 	if err != nil {
 		log.Fatalf("reader.SetOffset: %v", err)
 	}
@@ -109,6 +109,7 @@ func readNewDataFromMaster(ctx context.Context, reader *kafka.Reader) error {
 
 	var hosts []string
 	hosts, err = getHosts()
+
 	for _, host := range hosts {
 		redis := Redis{Cluster: host}
 		if err = redis.Connect(); err != nil {
@@ -116,14 +117,22 @@ func readNewDataFromMaster(ctx context.Context, reader *kafka.Reader) error {
 		}
 		defer redis.Close()
 
-		init := redis.HSet(ctx, "mdyagilev:main", string(message.Key), string(message.Value))
-		if init != nil {
-			log.Printf("value not record")
+		valueOfUrls, err := redis.HGetAll(ctx, "mdyagilev:events").Result()
+		if err != nil {
+			return fmt.Errorf("redis.HGet: %w", err)
 		}
 
-		init = redis.HSet(ctx, "mdyagilev:clicks", string(message.Value), 0)
-		if init != nil {
-			log.Printf("value not record")
+		_, urlExist := valueOfUrls[string(message.Key)]
+		if !urlExist {
+			init := redis.HSet(ctx, "mdyagilev:events", string(message.Key), string(message.Value))
+			if init != nil {
+				log.Printf("value record on :events")
+			}
+
+			init = redis.HSet(ctx, "mdyagilev:eventsClicks", string(message.Value), 0)
+			if init != nil {
+				log.Printf("value record on :eventsClicks")
+			}
 		}
 
 	}
@@ -133,8 +142,9 @@ func readNewDataFromMaster(ctx context.Context, reader *kafka.Reader) error {
 
 func replicaSendToMasterClickOnURL(ctx context.Context, longLink, topicToReplica, clickNumber string) error {
 	writer := &kafka.Writer{
-		Addr:  kafka.TCP("158.160.19.212:9092"),
-		Topic: topicToReplica,
+		Addr:         kafka.TCP("158.160.19.212:9092"),
+		RequiredAcks: 1,
+		Topic:        topicToReplica,
 	}
 
 	err := writer.WriteMessages(ctx, kafka.Message{
