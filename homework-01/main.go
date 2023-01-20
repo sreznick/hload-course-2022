@@ -1,51 +1,39 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "net/http"
+	"database/sql"
+	"fmt"
+	"net/http"
 
-    "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const SQL_DRIVER = "postgres"
-const SQL_CONNECT_URL = "postgres://postgres:postgres@localhost"
 
-func setupRouter() *gin.Engine {
-	r := gin.Default()
+const (
+	host     = "localhost"
+	port     = 5432
+	user     = "gouser"
+	password = "gouser"
+	dbname   = "shorturl"
+)
 
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "pong")
-	})
-
-	r.GET("/user/:name", func(c *gin.Context) {
-		user := c.Params.ByName("name")
-		if user == "vasya" {
-			c.JSON(http.StatusOK, gin.H{"user": user, "value": "12345"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{"user": user, "status": "no value"})
-		}
-	})
-
-	return r
-}
+const (
+	prometheusPort = ":2112"
+	routerPort     = ":8080"
+)
 
 func main() {
-    fmt.Println(sql.Drivers())
-    conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
-    if err != nil {
-        fmt.Println("Failed to open", err)
-        panic("exit")
-    }
+	fmt.Println(sql.Drivers())
 
-    err = conn.Ping()
-    if err != nil {
-        fmt.Println("Failed to ping database", err)
-        panic("exit")
-    }
+	psqlconn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
+	db := getDatabaseInstance()
+	db.InitDB(SQL_DRIVER, psqlconn)
 
+	http.Handle("/metrics", promhttp.Handler())
+	go func() { http.ListenAndServe(prometheusPort, nil) }()
 
 	r := setupRouter()
-	r.Run(":8080")
+	r.Run(routerPort)
 }
