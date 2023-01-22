@@ -1,0 +1,16 @@
+version: "3"
+
+services:
+  postgressql:
+    image: postgres:14.4
+    hostname: localhost
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - /var/run/postgresql:/var/run/postgresql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./postgresql/data:/var/lib/postgresql/data
+    ports:
+      - 5432:5432

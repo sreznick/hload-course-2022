@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS urls (
+    id SERIAL PRIMARY KEY,
+    url TEXT UNIQUE,
+    clicks INTEGER DEFAULT 0
+);
