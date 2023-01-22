@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"strconv"
 )
 
 const URL = "http://localhost:8080/"
@@ -19,10 +19,10 @@ type PutResponseJsonBody struct {
 	Tinyurl string
 }
 
+var tinyLongUrls map[string]string = make(map[string]string)
+
 func createPutRequest(longurl string) string {
-	var jsonBody = []byte(`{
-		"longurl": "aboba"
-	}`)
+	var jsonBody = []byte(fmt.Sprintf("{\"longurl\": \"%s\"}", longurl))
 
 	request, err := http.NewRequest("PUT", URL+"create", bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -47,46 +47,86 @@ func createPutRequest(longurl string) string {
 	return responseJson.Tinyurl
 }
 
+func genLongUrl(i int) string {
+	url := "https://google.com/"
+	postfix := fmt.Sprintf("%06d", i)
+	return url + postfix
+}
+
 func testPut() {
-	url := "abacabadabacaba"
-	tinyurl_prev := createPutRequest(url)
+	println("TestPut is started")
 	for i := 0; i < testCnt; i++ {
-		tinyurl := createPutRequest(url + strconv.Itoa(i))
-		if tinyurl == tinyurl_prev {
-			panic("same tinyurl for different longurls")
-		}
+		longUrl := genLongUrl(i)
+		tinyurl := createPutRequest(longUrl)
+		tinyLongUrls[tinyurl] = longUrl
 	}
 	println("TestPut is passed")
 }
 
 func testGetGood() {
-	url := "abacabadabacaba"
-	tinyurl := createPutRequest(url)
-	for i := 0; i < testCnt; i++ {
-		response, err := http.Get(URL + tinyurl)
+	println("TestGetGood is started")
+	for tinyUrl, longUrl := range tinyLongUrls {
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
 
+		request, err := http.NewRequest("GET", URL+tinyUrl, nil)
+		if err != nil {
+			panic("Could not create http GET request" + err.Error())
+		}
+
+		response, err := client.Do(request)
 		if err != nil {
 			panic("Could not do http GET request" + err.Error())
 		}
 
-		if response.StatusCode != 200 {
-			panic("returned code not 200")
+		if response.StatusCode != 302 {
+			panic("StatusCode should be 302")
+		}
+
+		var responseJson PutRequestJsonBody
+		err = json.NewDecoder(response.Body).Decode(&responseJson)
+		if err != nil {
+			panic("Could not parse json response" + err.Error())
+		}
+
+		if responseJson.Longurl != longUrl {
+			panic("Wrong longUrl")
 		}
 	}
 	println("TestGetGood is passed")
 }
 
+func genBadTinyUrl(i int) string {
+	body := fmt.Sprintf("%05d", i)
+	return "Z" + body + "Z" // такой шортурл будет занят только после более 10^6 операций
+}
+
 func testGetBad() {
-	url := "random???"
+	println("TestGetBad is started")
 
 	for i := 0; i < testCnt; i++ {
-		response, err := http.Get(URL + url)
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+
+		tinyUrl := genBadTinyUrl(i)
+		request, err := http.NewRequest("GET", URL+tinyUrl, nil)
+		if err != nil {
+			panic("Could not create http GET request" + err.Error())
+		}
+
+		response, err := client.Do(request)
 		if err != nil {
 			panic("Could not do http GET request" + err.Error())
 		}
 
 		if response.StatusCode != 404 {
-			panic("returned code not 404")
+			panic("StatusCode should be 404")
 		}
 	}
 	println("TestGetBad is passed")
