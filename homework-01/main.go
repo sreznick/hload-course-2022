@@ -10,6 +10,9 @@ import (
 	"net/http"
 )
 
+const prometheusAddress = ":8088"
+const appAddress = ":8080"
+
 func main() {
 	fmt.Println(sql.Drivers())
 	conn := database.CreateConnection()
@@ -19,13 +22,13 @@ func main() {
 
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
-		err := http.ListenAndServe(":8088", nil)
+		err := http.ListenAndServe(prometheusAddress, nil)
 		if err != nil {
 			panic("Problems with prometheus: " + err.Error())
 		}
 	}()
 
-	if err := r.Run(":8080"); err != nil {
+	if err := r.Run(appAddress); err != nil {
 		fmt.Println("Failed to run ", err.Error())
 		panic("exit")
 	}
