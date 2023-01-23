@@ -63,26 +63,29 @@ func testPut() {
 	println("TestPut is passed")
 }
 
+func createGetRequest(url string) int {
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	request, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		panic("Could not create http GET request" + err.Error())
+	}
+
+	response, err := client.Do(request)
+	if err != nil {
+		panic("Could not do http GET request" + err.Error())
+	}
+
+	return response.StatusCode
+}
+
 func testGetGood() {
 	println("TestGetGood is started")
 	for tinyUrl, _ := range tinyLongUrls {
-		client := &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-
-		request, err := http.NewRequest("GET", URL+tinyUrl, nil)
-		if err != nil {
-			panic("Could not create http GET request" + err.Error())
-		}
-
-		response, err := client.Do(request)
-		if err != nil {
-			panic("Could not do http GET request" + err.Error())
-		}
-
-		if response.StatusCode != 302 {
+		if createGetRequest(URL+tinyUrl) != 302 {
 			panic("StatusCode should be 302")
 		}
 	}
@@ -96,26 +99,9 @@ func genBadTinyUrl(i int) string {
 
 func testGetBad() {
 	println("TestGetBad is started")
-
 	for i := 0; i < testCnt; i++ {
-		client := &http.Client{
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
-		}
-
 		tinyUrl := genBadTinyUrl(i)
-		request, err := http.NewRequest("GET", URL+tinyUrl, nil)
-		if err != nil {
-			panic("Could not create http GET request" + err.Error())
-		}
-
-		response, err := client.Do(request)
-		if err != nil {
-			panic("Could not do http GET request" + err.Error())
-		}
-
-		if response.StatusCode != 404 {
+		if createGetRequest(URL+tinyUrl) != 404 {
 			panic("StatusCode should be 404")
 		}
 	}
