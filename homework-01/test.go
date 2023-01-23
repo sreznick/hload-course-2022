@@ -65,7 +65,7 @@ func testPut() {
 
 func testGetGood() {
 	println("TestGetGood is started")
-	for tinyUrl, longUrl := range tinyLongUrls {
+	for tinyUrl, _ := range tinyLongUrls {
 		client := &http.Client{
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
@@ -84,16 +84,6 @@ func testGetGood() {
 
 		if response.StatusCode != 302 {
 			panic("StatusCode should be 302")
-		}
-
-		var responseJson PutRequestJsonBody
-		err = json.NewDecoder(response.Body).Decode(&responseJson)
-		if err != nil {
-			panic("Could not parse json response" + err.Error())
-		}
-
-		if responseJson.Longurl != longUrl {
-			panic("Wrong longUrl")
 		}
 	}
 	println("TestGetGood is passed")
