@@ -1,51 +1,52 @@
 package main
 
 import (
-    "database/sql"
-    "fmt"
-    "net/http"
+	"database/sql"
+	"fmt"
+	"net/http"
 
-    "github.com/gin-gonic/gin"
-    _ "github.com/lib/pq"
+	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const SQL_DRIVER = "postgres"
 const SQL_CONNECT_URL = "postgres://postgres:postgres@localhost"
-
-func setupRouter() *gin.Engine {
-	r := gin.Default()
-
-	r.GET("/ping", func(c *gin.Context) {
-		c.String(http.StatusOK, "pong")
-	})
-
-	r.GET("/user/:name", func(c *gin.Context) {
-		user := c.Params.ByName("name")
-		if user == "vasya" {
-			c.JSON(http.StatusOK, gin.H{"user": user, "value": "12345"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{"user": user, "status": "no value"})
-		}
-	})
-
-	return r
-}
+const SQL_Local = "host=localhost " +
+	"port=5432 " +
+	"user=postgres " +
+	"password=psql " +
+	"dbname=hload " +
+	"sslmode=disable"
 
 func main() {
-    fmt.Println(sql.Drivers())
-    conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
-    if err != nil {
-        fmt.Println("Failed to open", err)
-        panic("exit")
-    }
+	fmt.Println(sql.Drivers())
 
-    err = conn.Ping()
-    if err != nil {
-        fmt.Println("Failed to ping database", err)
-        panic("exit")
-    }
+	conn, err := sql.Open(SQL_DRIVER, SQL_Local)
+	if err != nil {
+		fmt.Println("Failed to open", err)
+		panic("exit")
+	}
 
+	err = conn.Ping()
+	if err != nil {
+		fmt.Println("Failed to ping database", err)
+		panic("exit")
+	}
 
-	r := setupRouter()
+	_, err = conn.Exec("CREATE TABLE IF NOT EXISTS urlsStorage(id serial primary key, long_url varchar(200));")
+	if err != nil {
+		fmt.Println("Failed to create urls table", err)
+		panic("exit")
+	}
+
+	http.Handle("/metrics", promhttp.Handler())
+	go func() {
+		err := http.ListenAndServe(":2112", nil)
+		if err != nil {
+			panic("Problems with prometheus: " + err.Error())
+		}
+	}()
+
+	r := SetupRouter(conn)
 	r.Run(":8080")
 }
