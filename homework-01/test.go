@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 )
 
@@ -20,6 +21,10 @@ type PutResponseJsonBody struct {
 }
 
 var tinyLongUrls map[string]string = make(map[string]string)
+
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+var TinyUrlLength = 7
+var longUrlLength = 10
 
 func createPutRequest(longurl string) string {
 	var jsonBody = []byte(fmt.Sprintf("{\"longurl\": \"%s\"}", longurl))
@@ -47,9 +52,17 @@ func createPutRequest(longurl string) string {
 	return responseJson.Tinyurl
 }
 
+func RandString(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
+
 func genLongUrl(i int) string {
 	url := "https://google.com/"
-	postfix := fmt.Sprintf("%06d", i)
+	postfix := RandString(longUrlLength) // fmt.Sprintf("%06d", i)
 	return url + postfix
 }
 
@@ -93,8 +106,8 @@ func testGetGood() {
 }
 
 func genBadTinyUrl(i int) string {
-	body := fmt.Sprintf("%05d", i)
-	return "Z" + body + "Z" // такой шортурл будет занят только после более 10^6 операций
+	body := RandString(TinyUrlLength - 2) // fmt.Sprintf("%05d", i)
+	return "Z" + body + "Z"               // такой шортурл будет занят только после более 10^6 операций
 }
 
 func testGetBad() {
