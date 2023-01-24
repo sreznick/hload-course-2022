@@ -1,0 +1,14 @@
+{
+  "urlTopicName": "....",
+  "clicksTopicName": "....",
+  "messageDelim": "|",
+  "clicksThrsh": 10,
+  "clicksBrokers": ["1.1.1.1"],
+  "urlsBrokers": ["1.1.1.1"],
+
+  "clicksProducing": "1.1.1.1",
+  "urlsProducing": "1.1.1.1",
+
+  "clicksGroup": "g1",
+  "urlsGroup": "g2"
+}
