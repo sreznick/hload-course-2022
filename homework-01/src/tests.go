@@ -53,6 +53,7 @@ func makePut() string {
 	return responseForm.Tinyurl
 
 }
+
 func makeGet(tinyUrl string) {
 	response, err := http.Get("http://localhost:8080/" + tinyUrl)
 	if response != nil {
@@ -72,36 +73,37 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for k := 1; k <= 10000; k++ {
+		var k int
+		for k = 1; k <= 10000; k++ {
 			makePut()
-
-			if k == 10000 {
-				fmt.Println("Test on PUT request was completed")
-			}
+		}
+		if k == 10000 {
+			fmt.Println("Test on PUT request was completed")
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for k := 1; k <= 100000; k++ {
+		var k int
+		for k = 1; k <= 100000; k++ {
 			makeGet(tinyUrl)
 
-			if k == 100000 {
-				fmt.Println("Test on valid GET request was completed")
-			}
+		}
+		if k == 100000 {
+			fmt.Println("Test on valid GET request was completed")
 		}
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for k := 1; k <= 100000; k++ {
+		var k int
+		for k = 1; k <= 100000; k++ {
 			makeGet("invalidlinkq1w2e3r4t5y6")
-
-			if k == 100000 {
-				fmt.Println("Test on invalid GET request was completed")
-			}
+		}
+		if k == 100000 {
+			fmt.Println("Test on invalid GET request was completed")
 		}
 	}()
 

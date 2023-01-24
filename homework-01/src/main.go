@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	_ "strings"
 	"time"
@@ -26,27 +27,43 @@ func setupRouter() *gin.Engine {
 		})
 	})
 
-	r.GET("/user/:name", func(c *gin.Context) {
-		user := c.Params.ByName("name")
-		if user == "vasya" {
-			c.JSON(http.StatusOK, gin.H{"user": user, "value": "12345"})
-		} else {
-			c.JSON(http.StatusOK, gin.H{"user": user, "status": "no value"})
-		}
-	})
 	return r
+}
+
+func generateTinyUrl(conn *sql.DB) string {
+	for {
+		rand.Seed(time.Now().UnixNano())
+		charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+			"abcdefghijklmnopqrstuvwxyz" +
+			"0123456789")
+		var buildTinyUrl strings.Builder
+		for i := 0; i < 7; i++ {
+			buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
+		} //build random tinyurl
+
+		url := conn.QueryRow("SELECT longurl FROM links WHERE tinyurl=$1", buildTinyUrl.String()) // check collides
+		if url != nil {
+			return buildTinyUrl.String()
+		}
+
+	}
+}
+
+func getHosts() string {
+	data, err := os.ReadFile("port")
+	if err != nil {
+		fmt.Print(err)
+	}
+
+	return string(data)
 }
 
 // struct for user json request
 type create struct {
-	LONGURL string `json:"longurl"`
+	LongUrl string `json:"longurl"`
 }
 
-var links = []create{}
-
 func main() {
-
-	fmt.Println(sql.Drivers())
 	conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
 	if err != nil {
 		fmt.Println("Failed to open", err)
@@ -62,63 +79,69 @@ func main() {
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		http.ListenAndServe(":2112", nil)
+
 	}()
 
 	r := setupRouter()
 
-	r.PUT("/create", func(c *gin.Context) { //User make put request
-		var usersJSONLongUrl create //make new struct
-		if err := c.BindJSON(&usersJSONLongUrl); err != nil {
+	r.PUT("/create", func(ctx *gin.Context) { //User make put request
+		var (
+			usersJSONLongUrl create //make new struct
+		)
+		if err := ctx.BindJSON(&usersJSONLongUrl); err != nil {
 			fmt.Println("Failed", err)
 			panic("exit")
 		}
-		links = append(links, usersJSONLongUrl) //add to massive of slices
-		linkBigFromUser := usersJSONLongUrl.LONGURL
-		links = nil //delete last slice
-		fmt.Println(links)
+
+		linkBigFromUser := usersJSONLongUrl.LongUrl
 		var nameOfSearchingLinkInDB string
 		err = conn.QueryRow("SELECT longurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB) //check is link in the db
-		if err != nil {                                                                                                   //if db does not have a link
-			rand.Seed(time.Now().UnixNano())
-			charsAlphabetAndNumbers := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
-				"abcdefghijklmnopqrstuvwxyz" +
-				"0123456789")
-			var buildTinyUrl strings.Builder
-			for i := 0; i < 7; i++ {
-				buildTinyUrl.WriteRune(charsAlphabetAndNumbers[rand.Intn(len(charsAlphabetAndNumbers))])
-			} //build random tinyurl
-			shortLinkForDB := buildTinyUrl.String()
-			stmt, err := conn.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
+		if err != nil {
+			//if db does not have a link
+			shortLinkForDB := generateTinyUrl(conn) // generate tinyurl
+			// start transaction
+			tx, err := conn.BeginTx(ctx, nil)
 			if err != nil {
 				log.Fatal(err)
 			}
-			res, err := stmt.Exec(linkBigFromUser, shortLinkForDB)
+
+			stmt, err := tx.Prepare("INSERT INTO links (longurl, tinyurl) VALUES ($1, $2);") //put links in db
 			if err != nil {
-				log.Fatal(err)
+				tx.Rollback()
+				return
 			}
-			res = res
 			defer stmt.Close()
-			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": shortLinkForDB})
-		} else { //if db has a link
+			_, err = stmt.Exec(linkBigFromUser, shortLinkForDB)
+			if err != nil {
+				log.Fatal(err)
+			}
+			err = tx.Commit() // end transaction
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			ctx.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": shortLinkForDB})
+		} else {
+			//if db has a link
 			err = conn.QueryRow("SELECT tinyurl FROM links WHERE longurl=$1", linkBigFromUser).Scan(&nameOfSearchingLinkInDB)
 			if err != nil {
 				fmt.Println(err)
 			}
-			c.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": nameOfSearchingLinkInDB})
+			ctx.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": nameOfSearchingLinkInDB})
 		}
 	})
 
-	r.GET("/:tiny", func(c *gin.Context) { //User make get request
-		tiny := c.Params.ByName("tiny")
+	r.GET("/:tiny", func(ctx *gin.Context) { //User make get request
+		tiny := ctx.Params.ByName("tiny")
 		var longurl string
 		err = conn.QueryRow("SELECT longurl FROM links WHERE tinyurl =$1;", tiny).Scan(&longurl) //find longurl by tiny
 		if err != nil {
-			c.String(http.StatusNotFound, "404 page not found") //if link is out of db
+			ctx.String(http.StatusNotFound, "404 page not found") //if link is out of db
 		} else {
-			c.Redirect(http.StatusFound, longurl) //redirect to page
-			c.Abort()
+			ctx.Redirect(http.StatusFound, longurl) //redirect to page
+			ctx.Abort()
 		}
 	})
 
-	r.Run(":8080")
+	r.Run(getHosts())
 }
