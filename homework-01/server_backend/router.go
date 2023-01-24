@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/lib/pq"
 	"main/url_backend"
 	"math"
 	"math/rand"
@@ -14,7 +15,8 @@ import (
 const (
 	insertNewUrl = "insert into urls(id, url) values ($1, $2)"
 	selectByUrl  = "select id from urls where url = $1"
-	selectById   = "select * from urls where id = $1"
+
+	uniqueViolationErrorCode = "23505"
 )
 
 type CreateRequestJsonBody struct {
@@ -33,27 +35,42 @@ func getLongUrlFromJson(c *gin.Context) (string, error) {
 }
 
 func createNewId(db *sql.DB, longUrl string) (*int64, error) {
-	var tinyUrlId *int64
+	var tinyUrlId int64
 	for {
-		potentialId := rand.Int63n(int64(math.Pow(62, 7)))
-		err := db.QueryRow(selectById, potentialId).Scan(&tinyUrlId)
+		s1 := rand.NewSource(time.Now().UnixNano())
+		r1 := rand.New(s1)
+		tinyUrlId = r1.Int63n(int64(math.Pow(62, 7)))
+		err := db.QueryRow(insertNewUrl, tinyUrlId, longUrl).Err()
 
 		if err == nil {
-			break
+			return &tinyUrlId, nil
 		}
 
-		if err == sql.ErrNoRows {
-			db.QueryRow(insertNewUrl, potentialId, longUrl)
-			tinyUrlId = &potentialId
-			break
+		pqerr, ok := err.(*pq.Error)
+		if !ok {
+			return nil, fmt.Errorf("Internal error: `QueryRow` returned not *pq.Error")
 		}
 
-		if err != nil {
-			return nil, err
+		if pqerr.Code == uniqueViolationErrorCode {
+			err := db.QueryRow(selectByUrl, longUrl).Scan(&tinyUrlId)
+
+			if err == sql.ErrNoRows {
+				// Id uniqueness violation
+				continue
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			// Url uniqueness violation
+			return &tinyUrlId, nil
 		}
+
+		return nil, err
 	}
 
-	return tinyUrlId, nil
+	return &tinyUrlId, nil
 }
 
 func hasUrl(db *sql.DB, longUrl string) (*int64, error) {
