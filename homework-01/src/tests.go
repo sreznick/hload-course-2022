@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"sync"
 )
 
@@ -17,15 +18,16 @@ type put struct {
 	Tinyurl string
 }
 
-func makePut() string {
+func makePut(linkFromFile int) string {
 	body := request{
-		Longurl: "https://github.com/ACE-777",
+		Longurl: "https://github.com/search?q=" + strconv.Itoa(linkFromFile) + "r&type=code",
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
 		fmt.Println(err)
 		panic("error")
 	}
+
 	client := &http.Client{}
 
 	request, err := http.NewRequest(http.MethodPut, "http://localhost:8080/create", bytes.NewBuffer(data))
@@ -66,7 +68,6 @@ func makeGet(tinyUrl string) {
 }
 
 func main() {
-	tinyUrl := makePut()
 
 	var wg sync.WaitGroup
 
@@ -74,37 +75,42 @@ func main() {
 	go func() {
 		defer wg.Done()
 		var k int
-		for k = 1; k <= 10000; k++ {
-			makePut()
+		for k = 1; k <= 1000; k++ {
+			makePut(k)
 		}
-		if k == 10000 {
+
+		if k == 1000 {
 			fmt.Println("Test on PUT request was completed")
 		}
+
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		var k int
-		for k = 1; k <= 100000; k++ {
-			makeGet(tinyUrl)
-
+		for k = 1; k <= 10000; k++ {
+			makeGet(makePut(k))
 		}
-		if k == 100000 {
+
+		if k == 10000 {
 			fmt.Println("Test on valid GET request was completed")
 		}
+
 	}()
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		var k int
-		for k = 1; k <= 100000; k++ {
-			makeGet("invalidlinkq1w2e3r4t5y6")
+		for k = 1; k <= 10000; k++ {
+			makeGet("invalidlinkq" + strconv.Itoa(k))
 		}
-		if k == 100000 {
+
+		if k == 10000 {
 			fmt.Println("Test on invalid GET request was completed")
 		}
+
 	}()
 
 	wg.Wait()

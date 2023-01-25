@@ -78,6 +78,7 @@ var MetricOnPUT = prometheus.NewCounter(
 
 func main() {
 	conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
+	conn.SetMaxIdleConns(10000)
 	if err != nil {
 		fmt.Println("Failed to open", err)
 		panic("exit")
