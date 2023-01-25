@@ -39,7 +39,7 @@ func createNewId(db *sql.DB, longUrl string) (*int64, error) {
 		s1 := rand.NewSource(time.Now().UnixNano())
 		r1 := rand.New(s1)
 		tinyUrlId = r1.Int63n(int64(math.Pow(62, 7)))
-		err := db.QueryRow(insertNewUrl, tinyUrlId, longUrl).Err() //TODO is queryrow?
+		err := db.QueryRow(insertNewUrl, tinyUrlId, longUrl).Err()
 
 		if err == nil {
 			return &tinyUrlId, nil
@@ -51,11 +51,25 @@ func createNewId(db *sql.DB, longUrl string) (*int64, error) {
 		}
 
 		if pqerr.Code == uniqueViolationErrorCode {
-			continue
+			err := db.QueryRow(selectByUrl, longUrl).Scan(&tinyUrlId)
+
+			if err == sql.ErrNoRows {
+				// Id uniqueness violation
+				continue
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			// Url uniqueness violation
+			return &tinyUrlId, nil
 		}
 
 		return nil, err
 	}
+
+	return &tinyUrlId, nil
 }
 
 func hasUrl(db *sql.DB, longUrl string) (*int64, bool, error) {
