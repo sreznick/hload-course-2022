@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"math/rand"
@@ -63,6 +64,18 @@ type create struct {
 	LongUrl string `json:"longurl"`
 }
 
+var MetricOnGET = prometheus.NewCounter(
+	prometheus.CounterOpts{
+		Name: "get_requests",
+		Help: "Количество запросов на переход по shortUrl",
+	})
+
+var MetricOnPUT = prometheus.NewCounter(
+	prometheus.CounterOpts{
+		Name: "put_requests",
+		Help: "Количество запросов на создание shortUrl по longUrl",
+	})
+
 func main() {
 	conn, err := sql.Open(SQL_DRIVER, SQL_CONNECT_URL)
 	if err != nil {
@@ -76,6 +89,8 @@ func main() {
 		panic("exit")
 	}
 
+	prometheus.MustRegister(MetricOnGET)
+	prometheus.MustRegister(MetricOnPUT)
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
 		http.ListenAndServe(":2112", nil)
@@ -85,6 +100,7 @@ func main() {
 	r := setupRouter()
 
 	r.PUT("/create", func(ctx *gin.Context) { //User make put request
+		MetricOnPUT.Inc()
 		var (
 			usersJSONLongUrl create //make new struct
 		)
@@ -129,9 +145,11 @@ func main() {
 			}
 			ctx.JSON(http.StatusOK, gin.H{"longurl": linkBigFromUser, "tinyurl": nameOfSearchingLinkInDB})
 		}
+
 	})
 
 	r.GET("/:tiny", func(ctx *gin.Context) { //User make get request
+		MetricOnGET.Inc()
 		tiny := ctx.Params.ByName("tiny")
 		var longurl string
 		err = conn.QueryRow("SELECT longurl FROM links WHERE tinyurl =$1;", tiny).Scan(&longurl) //find longurl by tiny
@@ -141,6 +159,7 @@ func main() {
 			ctx.Redirect(http.StatusFound, longurl) //redirect to page
 			ctx.Abort()
 		}
+
 	})
 
 	r.Run(getHosts())
