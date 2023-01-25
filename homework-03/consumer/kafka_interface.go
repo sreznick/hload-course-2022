@@ -17,8 +17,9 @@ func SetConsumerKafka(c common.KafkaConfig) {
 	})
 
 	ClicksProducer = kafka.Writer{
-		Addr:     kafka.TCP(c.ClicksProducing),
-		Topic:    c.ClicksTopicName,
-		Balancer: &kafka.LeastBytes{},
+		Addr:         kafka.TCP(c.ClicksProducing),
+		Topic:        c.ClicksTopicName,
+		Balancer:     &kafka.LeastBytes{},
+		RequiredAcks: 1,
 	}
 }

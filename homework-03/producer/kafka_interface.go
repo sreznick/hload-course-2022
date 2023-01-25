@@ -17,8 +17,9 @@ func SetProducerKafka(c common.KafkaConfig) {
 	})
 
 	urlsProducer = kafka.Writer{
-		Addr:     kafka.TCP(c.UrlsProducing),
-		Topic:    c.UrlTopicName,
-		Balancer: &kafka.LeastBytes{},
+		Addr:         kafka.TCP(c.UrlsProducing),
+		Topic:        c.UrlTopicName,
+		Balancer:     &kafka.LeastBytes{},
+		RequiredAcks: 1,
 	}
 }
