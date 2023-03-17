@@ -77,13 +77,13 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		// for k := 1; k <= 10000; k++ {
-		for k := 1; k <= 1; k++ {
+		for k := 1; k <= 10000; k++ {
+		// for k := 1; k <= 1; k++ {
 			sendPut(baseLongURL)
-
+			if k % 1000 == 0 {
+				fmt.Println("%i create requests", k)
+			}
 		}
-
-		fmt.Println("10000 create requests")
 	}()
 
 	wg.Add(1)
@@ -93,11 +93,12 @@ func main() {
 		// for k := 1; k <= 1; k++ {
 			statCode := sendGet(shortURL)
 			if statCode >= 400 {
-				fmt.Println("statCode is %i", statCode)
+				fmt.Println("!statCode is %i", statCode)
+			}
+			if k % 1000 == 0 {
+				fmt.Println("%i get requests", k)
 			}
 		}
-
-		fmt.Println("100000 get requests")
 	}()
 
 	wg.Add(1)
@@ -105,10 +106,14 @@ func main() {
 		defer wg.Done()
 		for k := 1; k <= 100000; k++ {
 		// for k := 1; k <= 1; k++ {
-			sendGet(shortURL)
+			statCode := sendGet(invalidURL)
+			if statCode < 404 {
+				fmt.Println("!statCode is %i", statCode)
+			}
+			if k % 1000 == 0 {
+				fmt.Println("%i invalid get requests", k)
+			}
 		}
-
-		fmt.Println("100000 invalid get requests")
 	}()
 
 	wg.Wait()

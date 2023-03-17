@@ -43,6 +43,7 @@ func DBGetLong(db *sql.DB, shortURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var longURL string
@@ -57,6 +58,7 @@ func DBGetShort(db *sql.DB, longURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer rows.Close()
 
 	for rows.Next() {
 		var shortURL string
@@ -111,30 +113,14 @@ func RecordCreateTime(time float64) {
 var (
 	createOpTime = promauto.NewSummary(prometheus.SummaryOpts{
 		Name: "create_op_time",
-		Help: "Time of `create` operation processing",
+		Help: "Time of `create` operation processing, µs",
 	})
 
 	getOpTime = promauto.NewSummary(prometheus.SummaryOpts{
 		Name: "get_op_time",
-		Help: "Time of `get` operation processing",
+		Help: "Time of `get` operation processing, µs",
 	})
 )
-
-// func recordMetrics() {
-// 	go func() {
-// 		for {
-// 			opsProcessed.Inc()
-// 			time.Sleep(2 * time.Second)
-// 		}
-// 	}()
-// }
-
-// var (
-// 	opsProcessed = promauto.NewCounter(prometheus.CounterOpts{
-// 		Name: "myapp_processed_ops_total",
-// 		Help: "The total number of processed events",
-// 	})
-// )
 
 func setupPrometheusRouter() *gin.Engine {
 	r := gin.Default()
