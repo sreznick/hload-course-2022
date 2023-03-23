@@ -36,7 +36,10 @@ func GetTinyUrlById(id int) string {
 
 func GetIdByTinyUrl(tinyurl string, c *gin.Context) int {
 	data, err := base32.StdEncoding.WithPadding(-1).DecodeString(tinyurl)
-	ErrorCheck(err, "Decode error:")
+	if err != nil {
+		c.Writer.WriteHeader(404)
+		return -1
+	}
 	id, err := strconv.Atoi(string(data[:]))
 	if err != nil {
 		c.Writer.WriteHeader(404)
