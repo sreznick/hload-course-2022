@@ -70,6 +70,53 @@ var (
 	})
 )
 
+const (
+	insertIntoUrls = "INSERT INTO urls (url) VALUES ($1) ON CONFLICT DO NOTHING"
+	getIdByUrl     = "SELECT id FROM urls WHERE url = $1"
+	getUrlById     = "SELECT url FROM urls WHERE id = $1"
+	createTable    = "CREATE TABLE IF NOT EXISTS urls (id SERIAL, url TEXT PRIMARY KEY)"
+)
+
+func doCreate(c *gin.Context, db *sql.DB) {
+	bodyRequest := Request{}
+	err := c.BindJSON(&bodyRequest)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"response": "bad long url"})
+		return
+	}
+	_, err = db.Exec(insertIntoUrls, bodyRequest.Long_url)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"response": "can't insert new long url: " + err.Error()})
+		return
+	}
+
+	var id int
+	err = db.QueryRow(getIdByUrl, bodyRequest.Long_url).Scan(&id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"response": "can't retrieve just inserted url id: " + err.Error()})
+		return
+	}
+
+	tinyUrl := GetTinyUrlById(id)
+	c.JSON(http.StatusOK, gin.H{"longurl": bodyRequest.Long_url, "tinyurl": tinyUrl})
+}
+
+func doUrlGet(c *gin.Context, db *sql.DB) {
+	tinyUrl := c.Params.ByName("url")
+	id := GetIdByTinyUrl(tinyUrl, c)
+	if tinyUrl != GetTinyUrlById(id) {
+		c.Writer.WriteHeader(404)
+		return
+	}
+	var longUrl string
+	err := db.QueryRow(getUrlById, id).Scan(&longUrl)
+	if err != nil {
+		c.Writer.WriteHeader(http.StatusNotFound)
+	} else {
+		c.Redirect(http.StatusFound, longUrl)
+	}
+}
+
 func setupRouter(db *sql.DB) *gin.Engine {
 	r := gin.Default()
 
@@ -90,27 +137,7 @@ func setupRouter(db *sql.DB) *gin.Engine {
 		createRequestsNumber.Inc()
 		start := time.Now()
 
-		bodyRequest := Request{}
-		err := c.BindJSON(&bodyRequest)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"response": "bad long url"})
-			return
-		}
-		_, err = db.Exec("INSERT INTO urls (url) VALUES ($1) ON CONFLICT DO NOTHING", bodyRequest.Long_url)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"response": "can't insert new long url: " + err.Error()})
-			return
-		}
-
-		var id int
-		err = db.QueryRow("SELECT id FROM urls WHERE url = $1", bodyRequest.Long_url).Scan(&id)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"response": "can't retrieve just inserted url id: " + err.Error()})
-			return
-		}
-
-		tinyUrl := GetTinyUrlById(id)
-		c.JSON(http.StatusOK, gin.H{"longurl": bodyRequest.Long_url, "tinyurl": tinyUrl})
+		doCreate(c, db)
 
 		elapsed := float64(time.Since(start).Milliseconds())
 		createRequestTime.Observe(elapsed)
@@ -120,19 +147,7 @@ func setupRouter(db *sql.DB) *gin.Engine {
 		getRequestsNumber.Inc()
 		start := time.Now()
 
-		tinyUrl := c.Params.ByName("url")
-		id := GetIdByTinyUrl(tinyUrl, c)
-		if tinyUrl != GetTinyUrlById(id) {
-			c.Writer.WriteHeader(404)
-			return
-		}
-		var longUrl string
-		err := db.QueryRow("SELECT url FROM urls WHERE id = $1", id).Scan(&longUrl)
-		if err != nil {
-			c.Writer.WriteHeader(http.StatusNotFound)
-		} else {
-			c.Redirect(http.StatusFound, longUrl)
-		}
+		doUrlGet(c, db)
 
 		elapsed := float64(time.Since(start).Milliseconds())
 		getRequestTime.Observe(elapsed)
@@ -157,7 +172,7 @@ func StartSQL() *sql.DB {
 	err = conn.Ping()
 	ErrorCheck(err, "ERROR: Failed to ping database")
 
-	_, err = conn.Exec("CREATE TABLE IF NOT EXISTS urls (id SERIAL, url TEXT PRIMARY KEY)")
+	_, err = conn.Exec(createTable)
 	ErrorCheck(err, "ERROR: Failed to open or create table")
 
 	return conn

@@ -52,8 +52,14 @@ const URL = "http://localhost:8080/"
 func doGetRequest(tinyUrl string, client *http.Client) int {
 	resp, err := client.Get(URL + tinyUrl)
 	ErrorCheck(err, "Could not do http GET request")
+	defer resp.Body.Close()
 	return resp.StatusCode
 }
+
+const (
+	redirectCode = 302
+	notFoundCode = 404
+)
 
 func main() {
 	client := &http.Client{
@@ -66,20 +72,20 @@ func main() {
 	tinyUrl := doCreateRequest(url)
 
 	for i := 1; i <= 10000; i++ {
+		fmt.Println(i)
 		doCreateRequest(url + fmt.Sprint(i))
 	}
 
 	for i := 1; i <= 100000; i++ {
 		code := doGetRequest(tinyUrl, client)
-		if code != 302 {
+		if code != redirectCode {
 			panic("Code is not 302")
 		}
-
 	}
 
 	for i := 1; i <= 100000; i++ {
 		code := doGetRequest(tinyUrl+"jrbvrjbqevqrklqv", client)
-		if code != 404 {
+		if code != notFoundCode {
 			panic("Code is not 404")
 		}
 	}
