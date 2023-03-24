@@ -5,7 +5,6 @@ go 1.17
 require (
 	github.com/gin-gonic/gin v1.8.1
 	github.com/lib/pq v1.10.7
-	github.com/markphelps/optional v0.10.0
 	github.com/prometheus/client_golang v1.13.0
 )
 

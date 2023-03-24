@@ -1,43 +1,40 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	_ "github.com/lib/pq"
+	"math"
+	"strings"
 )
 
 const (
-	tinyUrlLength = 7
-	domain        = 62
-	alphabetSize  = 26
+	base     int = 62
+	alphabet     = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
 
-func GenerateTinyUrl(id int) (string, error) {
-	tinyUrlBytes := make([]byte, tinyUrlLength)
-
-	for i := range tinyUrlBytes {
-		var err error
-		tinyUrlBytes[i], err = getByte(id % domain)
-		if err != nil {
-			return "", err
-		}
-		id /= domain
+func GenerateTinyUrl(id int) string {
+	builder := strings.Builder{}
+	for id > 0 {
+		r := id % base
+		id /= base
+		builder.WriteString(string(alphabet[r]))
 	}
-
-	return string(tinyUrlBytes), nil
+	result := builder.String()
+	url := result + strings.Repeat("0", int(math.Max(0, float64(7-len(result)))))
+	return url
 }
 
 func GetIdByTinyUrl(tinyUrl string) (int, error) {
-	tinyUrlBytes := []byte(tinyUrl)
-	id := 0
-	for i := len(tinyUrlBytes) - 1; i >= 0; i-- {
-		id *= domain
-		byteId, err := byteToInt(tinyUrlBytes[i])
-		if err != nil {
-			return 0, err
+	var res int
+	for pow, char := range tinyUrl {
+		pos := strings.IndexRune(alphabet, char)
+		if pos == -1 {
+			return 0, errors.New("Unknown char: " + string(char))
 		}
-		id += byteId
+		res += pos * int(math.Pow(float64(base), float64(pow)))
 	}
-	return id, nil
+	return res, nil
 }
 
 func HandleError(err error, msg string) {
@@ -45,32 +42,4 @@ func HandleError(err error, msg string) {
 		fmt.Println(msg, err)
 		panic("Exit")
 	}
-}
-
-func getByte(id int) (byte, error) {
-	if id < alphabetSize {
-		return byte('a' + id), nil
-	}
-
-	if id >= alphabetSize && id < alphabetSize*2 {
-		return byte('A' + (id - alphabetSize)), nil
-	}
-
-	return byte('0' + (id - alphabetSize*2)), nil
-}
-
-func byteToInt(b byte) (int, error) {
-	if b >= 'a' && b <= 'z' {
-		return int(b - 'a'), nil
-	}
-
-	if b >= 'A' && b <= 'Z' {
-		return int(b - 'A' + alphabetSize), nil
-	}
-
-	if b >= '0' && b <= '9' {
-		return int(b - '0' + alphabetSize*2), nil
-	}
-
-	return 0, fmt.Errorf("incorrect character")
 }
